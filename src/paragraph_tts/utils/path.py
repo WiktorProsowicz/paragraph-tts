@@ -1,0 +1,203 @@
+"""Contains utilities for handling directory trees with pre-defined structure."""
+
+from typing import Iterator, Dict, Set
+import dataclasses
+import os
+import re
+import logging
+import sys
+
+
+class ProcessedLibriDirHandler:
+    """Manages access to content inside directory with processed LibriTTS-R ds."""
+
+    def __init__(self, ds_path: str):
+        """
+        Args:
+            ds_path: Path to processed ds.
+        """
+
+        os.makedirs(ds_path, exist_ok=True)
+
+        self._metadata_path = os.path.join(ds_path, 'metadata.json')
+
+    @property
+    def metadata_path(self):
+        """Returns path to a json file containing dataset's metadata."""
+        return self._metadata_path
+
+
+@dataclasses.dataclass
+class UtteranceInfo:
+    """Contains information about an utterance."""
+
+    utt_id: str
+    normalized_txt_path: str
+    wav_path: str
+
+
+@dataclasses.dataclass
+class ParagraphInfo:
+    """Contains information about a paragraph."""
+
+    para_id: str
+    utterances: list[UtteranceInfo]
+
+
+class RawLibriDirHandler:
+    """Manages access to contents of raw LibriTTS-R dataset."""
+
+    def __init__(self, raw_ds_path: str):
+        """
+        Args:
+            raw_ds_path: Root path to the LibriTTS-R raw ds.
+        """
+
+        self._raw_ds_path = raw_ds_path
+
+        self._spk_to_split = {}
+
+        for ds_split in os.listdir(self._raw_ds_path):
+            split_path = os.path.join(self._raw_ds_path, ds_split)
+
+            for spk_id in os.listdir(split_path):
+                self._spk_to_split[spk_id] = ds_split
+
+    @property
+    def num_speakers(self) -> int:
+        """Returns number of speakers in the dataset."""
+        return len(self._spk_to_split)
+
+    def iter_speakers(self) -> Iterator[str]:
+        """Iterates over speaker IDs."""
+
+        for ds_split in os.listdir(self._raw_ds_path):
+            split_path = os.path.join(self._raw_ds_path, ds_split)
+
+            yield from os.listdir(split_path)
+
+    def iter_chapters(self, speaker_id: str) -> Iterator[str]:
+        """Iterates over chapter IDs for a given speaker."""
+
+        speaker_path = os.path.join(
+            self._raw_ds_path,
+            self._spk_to_split[speaker_id],
+            speaker_id
+        )
+
+        yield from os.listdir(speaker_path)
+
+    def iter_paragraphs(self, spk_id: str, chapter_id: str) -> Iterator[ParagraphInfo]:
+        """Iterates over paragraphs in a chapter.
+
+        Args:
+            spk_id: Speaker ID.
+            chapter_path: Path to the chapter directory.
+        """
+
+        chapter_path = os.path.join(
+            self._raw_ds_path,
+            self._spk_to_split[spk_id],
+            spk_id,
+            chapter_id
+        )
+
+        para_to_utts = self._get_chap_and_utt_ids(chapter_id, spk_id)
+
+        for para_id in sorted(para_to_utts.keys()):
+
+            utterances = []
+
+            for utt_id in sorted(para_to_utts[para_id]):
+                base_name = f'{spk_id}_{chapter_id}_{para_id:06d}_{utt_id:06d}'
+
+                utt_info = UtteranceInfo(utt_id=utt_id,
+                                         normalized_txt_path=os.path.join(
+                                             chapter_path,
+                                             base_name + '.normalized.txt'),
+                                         wav_path=os.path.join(
+                                             chapter_path,
+                                             base_name + '.wav'))
+
+                for required_path in (
+                    utt_info.normalized_txt_path,
+                    utt_info.wav_path
+                ):
+                    if not os.path.exists(required_path):
+                        logging.critical('Required file %s does not exist!', required_path)
+                        break
+
+                utterances.append(utt_info)
+
+            yield ParagraphInfo(
+                para_id=para_id,
+                utterances=utterances
+            )
+
+    def iter_utterances_for_spk(self, spk_id: str) -> Iterator[UtteranceInfo]:
+        """Iterates over all utterances for a given speaker."""
+
+        for chap_id in self.iter_chapters(spk_id):
+            for para_info in self.iter_paragraphs(spk_id, chap_id):
+                yield from para_info.utterances
+
+    def _get_chap_and_utt_ids(self,
+                              chap_id: str,
+                              spk_id) -> Dict[int, Set[int]]:
+        """Gets mapping from paragraph IDs to sets of utterance IDs in a chapter."""
+
+        chapter_path = os.path.join(self._raw_ds_path,
+                                    self._spk_to_split[spk_id],
+                                    spk_id,
+                                    chap_id)
+
+        name_pattern = re.compile(r'\d+_\d+_(\d+)_(\d+)\..+')
+
+        para_to_utts: Dict[int, Set[int]] = {}
+
+        for file_name in os.listdir(chapter_path):
+            match = name_pattern.match(file_name)
+
+            if match is None:
+                continue
+
+            para_id = int(match.group(1))
+            utt_id = int(match.group(2))
+
+            if para_id not in para_to_utts:
+                para_to_utts[para_id] = set()
+
+            para_to_utts[para_id].add(utt_id)
+
+        self._verify_paragraphs(para_to_utts, chap_id, spk_id)
+
+        return para_to_utts
+
+    def _verify_paragraphs(self,
+                           para_to_utts: Dict[int, Set[int]],
+                           chap_id: str,
+                           spk_id: str):
+        """Verifies that given paragraphs are complete.
+
+        A paragraph is complete if:
+            1) All its utterances are contiguous.
+
+        Args:
+            para_to_utts: Mapping from paragraph IDs to sets of utterance IDs.
+            chap_id: Chapter ID.
+            spk_id: Speaker ID.
+        """
+
+        for para_id in para_to_utts:
+
+            for prev_utt, curr_utt in zip(
+                sorted(para_to_utts[para_id])[:-1],
+                sorted(para_to_utts[para_id])[1:]
+            ):
+                if curr_utt != prev_utt + 1:
+                    logging.warning(
+                        'Paragraph %d of chapter %s of speaker %s is incomplete!',
+                        para_id,
+                        chap_id,
+                        spk_id
+                    )
