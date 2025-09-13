@@ -20,7 +20,8 @@
 				"eamodio.gitlens",
 				"streetsidesoftware.code-spell-checker",
 				"matangover.mypy",
-				"ms-toolsai.tensorboard"
+				"ms-toolsai.tensorboard",
+				"skellock.just"
 			]
 		}
 	},

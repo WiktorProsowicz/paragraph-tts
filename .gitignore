@@ -1,0 +1,6 @@
+.vscode/
+.venv/
+paragraph_tts.egg-info/
+tmp/
+__pycache__/
+outputs/
