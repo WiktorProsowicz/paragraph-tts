@@ -10,7 +10,7 @@ def main(script_cfg: omegaconf.DictConfig):
     """Runs LibriTTS-R preprocessing."""
 
     raw_ds_handler = utils.path.RawLibriDirHandler(script_cfg.raw_ds_path)
-    preprocessor = data.librittsr.LibriTTSRPreprocessor(raw_ds_handler,
+    preprocessor = data.processor.LibriTTSRPreprocessor(raw_ds_handler,
                                                         script_cfg.processed_ds_output_path,
                                                         script_cfg.multi_speaker)
 

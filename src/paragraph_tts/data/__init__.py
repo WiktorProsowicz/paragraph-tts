@@ -1,2 +1,2 @@
-from . import librittsr
+from . import processor
 from . import preprocessing

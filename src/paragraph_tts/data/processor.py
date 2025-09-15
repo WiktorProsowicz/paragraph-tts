@@ -1,18 +1,15 @@
 """Contains classes for processing/reading LibriTTS-R dataset."""
 
 import logging
-import tqdm
+import tqdm  # type: ignore
 import os
 
-import torch.utils.data as torch_data
-from comp_trans_tts import (deepspeaker, audio as ctt_audio) 
+import torch
 import numpy as np
+from comp_trans_tts import (deepspeaker)  # type: ignore
 
-from paragraph_tts import utils
+from paragraph_tts import (utils, data)
 
-
-class LibriTTSR(torch_data.Dataset):
-    pass
 
 
 class LibriTTSRPreprocessor:
@@ -31,14 +28,14 @@ class LibriTTSRPreprocessor:
         self._output_path = output_path
         self._multi_speaker = multi_speaker
         self._embedder = deepspeaker.embedder.DeepSpeakerEmbedder()
-        self._stft = ctt_audio.stft.TacotronSTFT(
-            filter_length=1024,
+        self._audio_processor = data.preprocessing.audio.AudioProcessor(
+            sr=22050,
             hop_length=256,
-            win_length=1024,
-            n_mel_channels=80,
-            sampling_rate=22050,
-            mel_fmin=0,
-            mel_fmax=8000
+            win_length=1025,
+            n_mels=80,
+            fmin=0,
+            fmax=8000,
+            trim_top_db=23
         )
 
     def run(self):
@@ -48,16 +45,15 @@ class LibriTTSRPreprocessor:
             logging.info('Preparing speaker embeddings...')
             self._prepare_spk_embeddings()
 
-        
-
     def _prepare_spk_embeddings(self):
 
         embeddings_path = os.path.join(self._output_path, 'spk_embeddings')
 
         if os.path.exists(embeddings_path):
-            logging.info('Speaker embeddings already exist, skipping preparation.')
+            logging.info(
+                'Speaker embeddings already exist, skipping preparation.')
             return
-        
+
         os.makedirs(embeddings_path, exist_ok=True)
 
         for spk_id in tqdm.tqdm(self._raw_path_handler.iter_speakers(),
@@ -74,5 +70,5 @@ class LibriTTSRPreprocessor:
 
             final_embedding = np.mean(embeddings_for_spk, axis=0)
 
-            np.save(os.path.join(embeddings_path, f'{spk_id}.npy'),
-                    final_embedding)
+            torch.save(torch.tensor(final_embedding),
+                       os.path.join(embeddings_path, f'{spk_id}.pt'))
