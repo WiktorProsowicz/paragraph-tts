@@ -1,12 +1,13 @@
 """Contains utilities for handling directory trees with pre-defined structure."""
 
-from typing import Iterator, Dict, Set
+from typing import Iterator, Dict, Set, Optional, List
 import dataclasses
 import os
 import re
 import logging
-import sys
 
+def _logger():
+    return logging.getLogger('utils.path')
 
 class ProcessedLibriDirHandler:
     """Manages access to content inside directory with processed LibriTTS-R ds."""
@@ -32,7 +33,7 @@ class UtteranceInfo:
     """Contains information about an utterance."""
 
     utt_id: str
-    normalized_txt_path: str
+    text_path: str
     wav_path: str
 
 
@@ -41,6 +42,7 @@ class ParagraphInfo:
     """Contains information about a paragraph."""
 
     para_id: str
+    is_complete: bool
     utterances: list[UtteranceInfo]
 
 
@@ -76,16 +78,19 @@ class RawLibriDirHandler:
 
             yield from os.listdir(split_path)
 
-    def iter_chapters(self, speaker_id: str) -> Iterator[str]:
+    def iter_chapters(self, speaker_id: Optional[str] = None) -> Iterator[str]:
         """Iterates over chapter IDs for a given speaker."""
 
-        speaker_path = os.path.join(
-            self._raw_ds_path,
-            self._spk_to_split[speaker_id],
-            speaker_id
-        )
+        speaker_ids = [speaker_id] if speaker_id is not None else list(self.iter_speakers())
 
-        yield from os.listdir(speaker_path)
+        for spk_id in speaker_ids:
+            speaker_path = os.path.join(
+                self._raw_ds_path,
+                self._spk_to_split[spk_id],
+                spk_id
+            )
+
+            yield from os.listdir(speaker_path)
 
     def iter_paragraphs(self, spk_id: str, chapter_id: str) -> Iterator[ParagraphInfo]:
         """Iterates over paragraphs in a chapter.
@@ -112,7 +117,7 @@ class RawLibriDirHandler:
                 base_name = f'{spk_id}_{chapter_id}_{para_id:06d}_{utt_id:06d}'
 
                 utt_info = UtteranceInfo(utt_id=utt_id,
-                                         normalized_txt_path=os.path.join(
+                                         text_path=os.path.join(
                                              chapter_path,
                                              base_name + '.normalized.txt'),
                                          wav_path=os.path.join(
@@ -120,7 +125,7 @@ class RawLibriDirHandler:
                                              base_name + '.wav'))
 
                 for required_path in (
-                    utt_info.normalized_txt_path,
+                    utt_info.text_path,
                     utt_info.wav_path
                 ):
                     if not os.path.exists(required_path):
@@ -131,7 +136,8 @@ class RawLibriDirHandler:
 
             yield ParagraphInfo(
                 para_id=para_id,
-                utterances=utterances
+                utterances=utterances,
+                is_complete=self._is_chapter_complete(sorted(para_to_utts[para_id]))
             )
 
     def iter_utterances_for_spk(self, spk_id: str) -> Iterator[UtteranceInfo]:
@@ -190,14 +196,20 @@ class RawLibriDirHandler:
 
         for para_id in para_to_utts:
 
-            for prev_utt, curr_utt in zip(
-                sorted(para_to_utts[para_id])[:-1],
-                sorted(para_to_utts[para_id])[1:]
-            ):
-                if curr_utt != prev_utt + 1:
-                    logging.warning(
-                        'Paragraph %d of chapter %s of speaker %s is incomplete!',
-                        para_id,
-                        chap_id,
-                        spk_id
-                    )
+            if not self._is_chapter_complete(sorted(para_to_utts[para_id])):
+                _logger().debug('Paragraph %s of speaker %s in chapter %s is incomplete.',
+                                para_id, spk_id, chap_id)
+
+    def _is_chapter_complete(self, utt_ids: List[int]) -> bool:
+        """Checks if sorted utterances IDs are contiguous and start with 0."""
+
+        if len(utt_ids) == 0 or utt_ids[0] != 0:
+            return False
+
+        for prev_id, curr_id in zip(utt_ids, utt_ids[1:]):
+            if curr_id != prev_id + 1:
+                return False
+            
+        return True
+
+    
