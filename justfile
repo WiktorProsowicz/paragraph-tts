@@ -10,6 +10,7 @@ build_external_repos:
     #!/usr/bin/env bash
     echo "Installing dependencies..."
     source .venv/bin/activate
+    export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
     pip install -e extern/torch-dev-utils
     pip install -e extern/Comprehensive-Transformer-TTS
 
