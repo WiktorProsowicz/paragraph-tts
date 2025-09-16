@@ -2,8 +2,9 @@
 
 from typing import Tuple
 
+import librosa
 import numpy as np
-import comp_trans_tts # type: ignore
+import comp_trans_tts  # type: ignore
 
 
 class AudioProcessor:
@@ -78,8 +79,19 @@ class AudioProcessor:
         )
 
         return wav
+    
+    def load_wav_raw(self, file_path: str) -> np.ndarray:
+        """Loads a waveform from a file without any trimming or padding.
 
-    def length_in_sec(self, wav: np.ndarray) -> float:
-        """Calculates length of the given wav in seconds."""
+        Args:
+            file_path: Path to the audio file.
+        """
 
-        return len(wav) / self._sr
+        wav, _ = librosa.load(file_path, sr=self._sr)
+
+        return wav
+
+    def length_in_sec_of_file(self, file_path: str) -> float:
+        """Calculates length of the given wav file in seconds without reading its payload."""
+
+        return librosa.get_duration(path=file_path, sr=self._sr)
