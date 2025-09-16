@@ -6,8 +6,10 @@ import os
 import re
 import logging
 
+
 def _logger():
-    return logging.getLogger('utils.path')
+    return logging.getLogger(__name__)
+
 
 class ProcessedLibriDirHandler:
     """Manages access to content inside directory with processed LibriTTS-R ds."""
@@ -92,7 +94,7 @@ class RawLibriDirHandler:
             )
 
             yield from os.listdir(speaker_path)
-    
+
     def iter_all_paragraphs(self) -> Iterator[ParagraphInfo]:
         """Iterates over all paragraphs in the dataset."""
 
@@ -137,7 +139,7 @@ class RawLibriDirHandler:
                     utt_info.wav_path
                 ):
                     if not os.path.exists(required_path):
-                        logging.critical('Required file %s does not exist!', required_path)
+                        _logger().warning('Required file %s does not exist!', required_path)
                         break
 
                 utterances.append(utt_info)
@@ -218,7 +220,5 @@ class RawLibriDirHandler:
         for prev_id, curr_id in zip(utt_ids, utt_ids[1:]):
             if curr_id != prev_id + 1:
                 return False
-            
-        return True
 
-    
+        return True

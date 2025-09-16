@@ -7,6 +7,10 @@ import gruut
 from DeBERTa import deberta
 
 
+def _logger():
+    return logging.getLogger(__name__)
+
+
 @dataclasses.dataclass
 class TextFeatures:
     """Contains features extracted from text."""
