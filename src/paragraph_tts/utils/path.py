@@ -42,6 +42,7 @@ class ParagraphInfo:
     """Contains information about a paragraph."""
 
     para_id: str
+    chap_id: str
     is_complete: bool
     utterances: list[UtteranceInfo]
 
@@ -91,6 +92,13 @@ class RawLibriDirHandler:
             )
 
             yield from os.listdir(speaker_path)
+    
+    def iter_all_paragraphs(self) -> Iterator[ParagraphInfo]:
+        """Iterates over all paragraphs in the dataset."""
+
+        for spk_id in self.iter_speakers():
+            for chap_id in self.iter_chapters(spk_id):
+                yield from self.iter_paragraphs(spk_id, chap_id)
 
     def iter_paragraphs(self, spk_id: str, chapter_id: str) -> Iterator[ParagraphInfo]:
         """Iterates over paragraphs in a chapter.
@@ -136,6 +144,7 @@ class RawLibriDirHandler:
 
             yield ParagraphInfo(
                 para_id=para_id,
+                chap_id=chapter_id,
                 utterances=utterances,
                 is_complete=self._is_chapter_complete(sorted(para_to_utts[para_id]))
             )

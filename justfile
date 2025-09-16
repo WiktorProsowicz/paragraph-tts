@@ -4,6 +4,7 @@ setup_venv:
     #!/usr/bin/env bash
     echo "Setting up virtual environment..."
     python3.11 -m venv --system-site-packages .venv
+    echo 'export MPLBACKEND=Agg' >> .venv/bin/activate
 
 # Build and install dependencies from `extern` directory.
 build_external_repos:
