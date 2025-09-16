@@ -21,40 +21,81 @@ class TextFeatures:
 
 @dataclasses.dataclass
 class _WordStruct:
-    """Contains word-level information during text processing."""
+    """Contains word-level information during text processing.
 
+    Each word represents a punctuation-less unit spanning a certain number of phonemes
+    and BERT tokens.
+    """
+
+    # Word's textual content.
     text: str
+    # List of phonemes in the word.
     phonemes: List[str]
+    # Word's text with original punctuation (if any).
     text_with_punct: str
 
 
 class TextProcessor:
     """Processes text data."""
 
+    # Single punctuation marks to be attached to the leading word.
+    single_puncts_replace = {
+        ' . ': '. ',
+        ' , ': ', ',
+        ' ! ': '! ',
+        ' ? ': '? ',
+        ' " ': '" ',
+        ' : ': ': ',
+    }
+
+    # Punctuation marks that should be moved outside from the quotation.
+    puncts_before_quotes_replace = {
+        '."': '".',
+        '!"': '"!',
+        '?"': '"?',
+        ',"': '",',
+        ':"': '":',
+    }
+
+    # Replacements for post-processing of word structs.
+    puncts_after_quotes_replace = {
+        '"!': '!"',
+        '"?': '?"',
+    }
+
+    allowed_chars = (
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789"
+        " .,:!?'\"$€"
+    )
+
     def __init__(self):
         """Inits the text processor."""
 
         vocab_path, vocab_type = deberta.load_vocab(pretrained_id='xxlarge-v2')
         self._tokenizer = deberta.tokenizers[vocab_type](vocab_path)
-        self._allowed_chars = (
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "abcdefghijklmnopqrstuvwxyz"
-            "0123456789"
-            " .,!?"
-        )
 
     def normalize_text(self, text: str) -> str:
-        """Performs text normalization."""
+        """Cleans the text and prepares it for tokenization."""
 
-        text = filter(lambda x: x in self._allowed_chars, text)
+        text = filter(lambda x: x in self.allowed_chars, text)
         text = "".join(text)
+        text = " ".join(text.split())
 
-        return " ".join(text.split())
+        for pattern, replacement in self.single_puncts_replace.items():
+            text = text.replace(pattern, replacement)
+
+        for pattern, replacement in self.puncts_before_quotes_replace.items():
+            text = text.replace(pattern, replacement)
+
+        return text
 
     def tokenize_text(self, normalized_text: str) -> TextFeatures:
         """Processes and tokenizes text."""
 
-        word_structs = self._get_word_structs(normalized_text)
+        word_structs = self._get_word_structs(normalized_text.replace('"', '`'))
+        self._post_process_word_structs(word_structs)
 
         word_to_phoneme_spans = []
         word_to_token_spans = []
@@ -100,9 +141,34 @@ class TextProcessor:
                     word_structs[-1].phonemes.append(word.text)
                     continue
 
+                word_phonemes = list(word.phonemes)
+
+                if word.text.startswith('`'):
+                    word_phonemes = ['"'] + word_phonemes
+
+                if word.text.endswith('`'):
+                    word_phonemes = word_phonemes + ['"']
+
                 word_structs.append(_WordStruct(
-                    text=word.text,
-                    phonemes=word.phonemes,
-                    text_with_punct=word.text))
+                    text=word.text.replace('`', ''),
+                    phonemes=word_phonemes,
+                    text_with_punct=word.text.replace('`', '"')))
 
         return word_structs
+
+    def _post_process_word_structs(self, word_structs: List[_WordStruct]):
+        """Post-processes word structs to fix punctuation placement."""
+
+        for word_struct in word_structs:
+
+            word_phonemes = ' '.join(word_struct.phonemes)
+            word_phonemes = word_phonemes.replace('" !', '! "').replace('" ?', '? "')
+            word_phonemes = word_phonemes.split(' ')
+
+            text_with_punct = word_struct.text_with_punct
+
+            for pattern, replacement in self.puncts_after_quotes_replace.items():
+                text_with_punct = text_with_punct.replace(pattern, replacement)
+
+            word_struct.phonemes = word_phonemes
+            word_struct.text_with_punct = text_with_punct
