@@ -76,23 +76,19 @@ class TextProcessor:
         vocab_path, vocab_type = deberta.load_vocab(pretrained_id='xxlarge-v2')
         self._tokenizer = deberta.tokenizers[vocab_type](vocab_path)
 
-    def normalize_text(self, text: str) -> str:
-        """Cleans the text and prepares it for tokenization."""
+    def clean_text(self, text: str) -> str:
+        """Cleans the text by removing unwanted characters."""
 
         text = filter(lambda x: x in self.allowed_chars, text)
         text = "".join(text)
         text = " ".join(text.split())
 
-        for pattern, replacement in self.single_puncts_replace.items():
-            text = text.replace(pattern, replacement)
-
-        for pattern, replacement in self.puncts_before_quotes_replace.items():
-            text = text.replace(pattern, replacement)
-
         return text
 
-    def tokenize_text(self, normalized_text: str) -> TextFeatures:
+    def tokenize_text(self, text: str) -> TextFeatures:
         """Processes and tokenizes text."""
+
+        normalized_text = self._prepare_for_tokenization(text)
 
         word_structs = self._get_word_structs(normalized_text.replace('"', '`'))
         self._post_process_word_structs(word_structs)
@@ -119,6 +115,21 @@ class TextProcessor:
             bert_tokens=bert_tokens,
             word_to_phoneme_spans=word_to_phoneme_spans,
             word_to_token_spans=word_to_token_spans)
+
+    
+
+    def _prepare_for_tokenization(self, text: str) -> str:
+        """Cleans the text and prepares it for tokenization."""
+
+        text = self.clean_text(text)
+
+        for pattern, replacement in self.single_puncts_replace.items():
+            text = text.replace(pattern, replacement)
+
+        for pattern, replacement in self.puncts_before_quotes_replace.items():
+            text = text.replace(pattern, replacement)
+
+        return text
 
     def _get_word_structs(self, text) -> List[_WordStruct]:
         """Converts text to a list of word structs."""

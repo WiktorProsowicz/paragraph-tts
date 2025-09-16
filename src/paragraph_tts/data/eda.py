@@ -46,7 +46,7 @@ class FeaturesExtractor:
 
         for utt in para_info.utterances:
             with open(utt.text_path, 'r', encoding='utf-8') as text_f:
-                text = self._text_processor.normalize_text(text_f.read())
+                text = self._text_processor.clean_text(text_f.read())
             lines.append(f'{utt.utt_id}: {text}')
 
         return lines
@@ -325,7 +325,7 @@ class FeaturesExtractor:
                 if any(p in text for p in self._text_processor.single_puncts_replace):
                     stats['has_single_punctuations'].append(1)
 
-                text_norm = self._text_processor.normalize_text(text)
+                text_norm = self._text_processor.clean_text(text)
 
                 n_words = len(text_norm.split())
                 stats['word_counts'].append(n_words)
