@@ -1,5 +1,5 @@
 """Contains utilities for performing Exploratory Data Analysis of LibriTTS-R DS."""
-from typing import Dict, Any, Iterator, List
+from typing import Dict, Any, Iterator, List, TypeAlias
 import itertools
 import random
 
@@ -9,10 +9,40 @@ import matplotlib.pyplot as plt  # type: ignore
 from paragraph_tts import utils
 from paragraph_tts.data import preprocessing
 
+_FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 
 def is_paragraph_valid(para_info: utils.path.ParagraphInfo) -> bool:
     """Returns True if the paragraph is valid."""
     return para_info.is_complete and len(para_info.utterances) >= 3
+
+
+def _calculate_basic_numerical_stats(data: _FixedLengthArrayType) -> Dict[str, float]:
+    """Calculates basic numerical statistics for a list of numbers."""
+
+    return {
+        'min': float(np.min(data)),
+        'max': float(np.max(data)),
+        'avg': float(np.mean(data)),
+        'std': float(np.std(data)),
+        'q1': float(np.percentile(data, 25)),
+        'q2': float(np.percentile(data, 50)),
+        'q3': float(np.percentile(data, 75))
+    }
+
+
+def _is_outlier_lower(value: float | int, q1: float, q3: float) -> bool:
+    """Tells if the value is a lower outlier based on IQR rule."""
+    return value < (q1 - 1.5 * (q3 - q1))
+
+def _is_upper_outlier(value: float | int, q1: float, q3: float) -> bool:
+    """Tells if the value is an upper outlier based on IQR rule."""
+    return value > (q3 + 1.5 * (q3 - q1))
+
+def _is_outlier(value: float | int, q1: float, q3: float) -> bool:
+    """Tells if the value is an outlier based on IQR rule."""
+    return _is_outlier_lower(value, q1, q3) or _is_upper_outlier(value, q1, q3)
+
+
 
 class FeaturesExtractor:
     """Extracts various features from the dataset."""
@@ -41,7 +71,7 @@ class FeaturesExtractor:
 
     def paragraph_as_lines(self, para_info: utils.path.ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
-    
+
         lines = []
 
         for utt in para_info.utterances:
@@ -50,17 +80,17 @@ class FeaturesExtractor:
             lines.append(f'{utt.utt_id}: {text}')
 
         return lines
-    
+
     def paragraph_as_waveform(self, para_info: utils.path.ParagraphInfo) -> np.ndarray:
         """Returns the paragraph as a concatenated waveform."""
-    
+
         waveforms = []
 
         for utt in para_info.utterances:
             wav = self._audio_processor.load_wav_raw(utt.wav_path)
             waveforms.append(wav)
 
-        return np.concatenate(waveforms, axis=0)      
+        return np.concatenate(waveforms, axis=0)
 
     def get_speakers_stats(self) -> Dict[str, Any]:
         """Returns stats related to speakers."""
@@ -71,23 +101,17 @@ class FeaturesExtractor:
 
         utt_stats_per_speaker = self._get_stats_per_speaker()
 
-        speakers_stats['utterances_per_speaker'] = {
-            'min': int(np.min(utt_stats_per_speaker['num_utt'])),
-            'max': int(np.max(utt_stats_per_speaker['num_utt'])),
-            'avg': float(np.mean(utt_stats_per_speaker['num_utt'])),
-        }
+        speakers_stats['utterances_per_speaker'] = _calculate_basic_numerical_stats(
+            utt_stats_per_speaker['num_utt']
+        )
 
-        speakers_stats['total_duration_per_speaker (minutes)'] = {
-            'min': float(np.min(utt_stats_per_speaker['total_dur']) / 60.0),
-            'max': float(np.max(utt_stats_per_speaker['total_dur']) / 60.0),
-            'avg': float(np.mean(utt_stats_per_speaker['total_dur']) / 60.0),
-        }
+        speakers_stats['total_duration_per_speaker (minutes)'] = _calculate_basic_numerical_stats(
+            np.array(utt_stats_per_speaker['total_dur']) / 60.0
+        )
 
-        speakers_stats['paragraphs_per_speaker'] = {
-            'min': int(np.min(utt_stats_per_speaker['num_paragraphs'])),
-            'max': int(np.max(utt_stats_per_speaker['num_paragraphs'])),
-            'avg': float(np.mean(utt_stats_per_speaker['num_paragraphs'])),
-        }
+        speakers_stats['paragraphs_per_speaker'] = _calculate_basic_numerical_stats(
+            utt_stats_per_speaker['num_paragraphs']
+        )
 
         return speakers_stats
 
@@ -111,17 +135,13 @@ class FeaturesExtractor:
                     n_paragraphs_in_chapter[chap_id] += 1
                     n_utterances_in_chapter[chap_id] += len(para_info.utterances)
 
-        chapters_stats['paragraphs_per_chapter'] = {
-            'min': int(np.min(list(n_paragraphs_in_chapter.values()))),
-            'max': int(np.max(list(n_paragraphs_in_chapter.values()))),
-            'avg': float(np.mean(list(n_paragraphs_in_chapter.values()))),
-        }
+        chapters_stats['paragraphs_per_chapter'] = _calculate_basic_numerical_stats(
+            list(n_paragraphs_in_chapter.values())
+        )
 
-        chapters_stats['utterances_per_chapter'] = {
-            'min': int(np.min(list(n_utterances_in_chapter.values()))),
-            'max': int(np.max(list(n_utterances_in_chapter.values()))),
-            'avg': float(np.mean(list(n_utterances_in_chapter.values()))),
-        }
+        chapters_stats['utterances_per_chapter'] = _calculate_basic_numerical_stats(
+            list(n_utterances_in_chapter.values())
+        )
 
         return chapters_stats
 
@@ -149,11 +169,9 @@ class FeaturesExtractor:
 
                     n_paragraphs += 1
 
-        paragraphs_stats['utterances_per_paragraph'] = {
-            'min': int(np.min(n_utterances_in_paragraph)),
-            'max': int(np.max(n_utterances_in_paragraph)),
-            'avg': float(np.mean(n_utterances_in_paragraph)),
-        }
+        paragraphs_stats['utterances_per_paragraph'] = _calculate_basic_numerical_stats(
+            n_utterances_in_paragraph
+        )
 
         paragraphs_stats['num_incomplete_paragraphs'] = n_incomplete_paragraphs
         paragraphs_stats['num_paragraphs'] = n_paragraphs
@@ -170,23 +188,37 @@ class FeaturesExtractor:
 
         utterances_stats['num_utterances'] = len(stats_per_utterance['word_counts'])
 
-        utterances_stats['words_per_utterance'] = {
-            'min': int(np.min(stats_per_utterance['word_counts'])),
-            'max': int(np.max(stats_per_utterance['word_counts'])),
-            'avg': float(np.mean(stats_per_utterance['word_counts'])),
-        }
+        utterances_stats['words_per_utterance'] = _calculate_basic_numerical_stats(
+            stats_per_utterance['word_counts'])
 
-        utterances_stats['length_sec_per_utterance'] = {
-            'min': float(np.min(stats_per_utterance['lengths_sec'])),
-            'max': float(np.max(stats_per_utterance['lengths_sec'])),
-            'avg': float(np.mean(stats_per_utterance['lengths_sec'])),
-        }
+        utterances_stats['length_sec_per_utterance'] = _calculate_basic_numerical_stats(
+            stats_per_utterance['lengths_sec']
+        )
 
         utterances_stats['num_utterances_with_isolated_punctuations'] = sum(
             stats_per_utterance['has_single_punctuations'])
 
         total_dur = np.sum(stats_per_utterance['lengths_sec']) / 3600.0
         utterances_stats['total_duration (hours)'] = float(total_dur)
+
+        n_outliers_word_counts = sum(
+            _is_outlier(word_count,
+                        utterances_stats['words_per_utterance']['q1'],
+                        utterances_stats['words_per_utterance']['q3'])
+            for word_count in stats_per_utterance['word_counts']
+        )
+
+        n_outliers_lengths_sec = sum(
+            _is_outlier(length_sec,
+                        utterances_stats['length_sec_per_utterance']['q1'],
+                        utterances_stats['length_sec_per_utterance']['q3'])
+            for length_sec in stats_per_utterance['lengths_sec']
+        )
+
+        utterances_stats['num_outliers'] = {
+            'word_count': n_outliers_word_counts,
+            'length_sec': n_outliers_lengths_sec
+        }
 
         return utterances_stats
 
@@ -255,26 +287,82 @@ class FeaturesExtractor:
 
         The paragraphs are selected from valid and invalid ones.
         """
-        
+
         valid_paras = filter(
             is_paragraph_valid,
             self._raw_path_handler.iter_all_paragraphs())
         invalid_paras = itertools.filterfalse(
             is_paragraph_valid,
             self._raw_path_handler.iter_all_paragraphs())
-        
+
         valid_paras = list(valid_paras)
         invalid_paras = list(invalid_paras)
 
         random.shuffle(valid_paras)
         random.shuffle(invalid_paras)
-        
+
         num_paras_needed = min(5, len(valid_paras), len(invalid_paras))
 
         return itertools.chain(
             itertools.islice(valid_paras, num_paras_needed),
             itertools.islice(invalid_paras, num_paras_needed)
         )
+
+    def get_outlier_utterances(self) -> Dict[str, Iterator[utils.path.UtteranceInfo]]:
+        """Returns outlier utterances from the dataset.
+
+        Outliers are either extremely short or extremely long utterances.
+        """
+
+        word_count_lower_outliers = []
+        length_sec_lower_outliers = []
+        word_count_upper_outliers = []
+        length_sec_upper_outliers = []
+
+        stats_per_utterance = self._get_stats_per_utterance()
+
+        q1_word_counts = np.percentile(stats_per_utterance['word_counts'], 25)
+        q3_word_counts = np.percentile(stats_per_utterance['word_counts'], 75)
+
+        q1_lengths_sec = np.percentile(stats_per_utterance['lengths_sec'], 25)
+        q3_lengths_sec = np.percentile(stats_per_utterance['lengths_sec'], 75)
+
+        for spk_id in self._raw_path_handler.iter_speakers():
+            for utterance in self._raw_path_handler.iter_utterances_for_spk(spk_id):
+
+                with open(utterance.text_path, 'r', encoding='utf-8') as text_f:
+                    text = text_f.read()
+
+                text_norm = self._text_processor.clean_text(text)
+
+                n_words = len(text_norm.split())
+                length_sec = self._audio_processor.length_in_sec_of_file(utterance.wav_path)
+
+                if _is_outlier_lower(n_words, q1_word_counts, q3_word_counts):
+                    word_count_lower_outliers.append(utterance)
+                elif _is_upper_outlier(n_words, q1_word_counts, q3_word_counts):
+                    word_count_upper_outliers.append(utterance)
+
+                if _is_outlier_lower(length_sec, q1_lengths_sec, q3_lengths_sec):
+                    length_sec_lower_outliers.append(utterance)
+                elif _is_upper_outlier(length_sec, q1_lengths_sec, q3_lengths_sec):
+                    length_sec_upper_outliers.append(utterance)
+
+        random.shuffle(word_count_lower_outliers)
+        random.shuffle(word_count_upper_outliers)
+        random.shuffle(length_sec_lower_outliers)
+        random.shuffle(length_sec_upper_outliers)
+
+        return {
+            'word_count': {
+                'lower_outliers': itertools.islice(word_count_lower_outliers, 5),
+                'upper_outliers': itertools.islice(word_count_upper_outliers, 5)
+            },
+            'length_sec': {
+                'lower_outliers': itertools.islice(length_sec_lower_outliers, 5),
+                'upper_outliers': itertools.islice(length_sec_upper_outliers, 5)
+            }
+        }
 
     def _get_stats_per_speaker(self) -> Dict[str, Any]:
         """Returns stats related to utterances per speaker."""

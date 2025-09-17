@@ -48,13 +48,42 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
                 wav_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.wav')
                 soundfile.write(wav_path, wav, samplerate=22050)
 
+def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
+                             output_dir: str):
+    
+    logging.info('Saving outlier utterances...')
+    outliers = feature_extractor.get_outlier_utterances()
+
+    for stat_type in outliers:
+        for outlier_type, utterances in outliers[stat_type].items():
+            
+            outliers_dir = os.path.join(output_dir, 'outlier_utterances', stat_type)
+            os.makedirs(outliers_dir, exist_ok=True)
+
+            for utt_idx, utt_info in enumerate(utterances):
+                utt_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.txt')
+                wav_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.wav')
+
+                with open(utt_info.text_path, 'r', encoding='utf-8') as text_f:
+                    text = text_f.read().strip()
+
+                with open(utt_info.wav_path, 'rb') as src_wav_f:
+                    wav_data = src_wav_f.read()
+                
+                with open(utt_path, 'w', encoding='utf-8') as utt_f:
+                    utt_f.write(f'Utterance ID: {utt_info.utt_id}\n')
+                    utt_f.write(f'Text: {text}\n')
+
+                with open(wav_path, 'wb') as dst_wav_f:
+                    dst_wav_f.write(wav_data)
+
 
 @hydra.main(version_base=None, config_path='cfg', config_name='perform_eda')
 def main(script_cfg: omegaconf.DictConfig):
     """Runs LibriTTS-R Exploratory Data Analysis."""
 
     utils.logging_utils.setup_logging()
-    logging.getLogger('utils.path').setLevel(logging.INFO)
+    logging.getLogger('paragraph_tts.utils.path').setLevel(logging.INFO)
 
     if not os.path.exists(script_cfg.raw_ds_path):
         logging.critical('Cannot load raw dataset from a non-existing path: %s',
@@ -91,6 +120,8 @@ def main(script_cfg: omegaconf.DictConfig):
         logging.info('Saved figure: %s', fig_path)
 
     _save_example_paragraphs(feature_extractor, script_cfg.output_dir)
+
+    _save_outlier_utterances(feature_extractor, script_cfg.output_dir)
 
     with open(os.path.join(script_cfg.output_dir, 'README.txt'), 'w', encoding='utf-8') as readme_f:
         readme_f.write(RESULTS_DESC.format(

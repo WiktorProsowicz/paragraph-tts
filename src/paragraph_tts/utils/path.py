@@ -186,30 +186,7 @@ class RawLibriDirHandler:
 
             para_to_utts[para_id].add(utt_id)
 
-        self._verify_paragraphs(para_to_utts, chap_id, spk_id)
-
         return para_to_utts
-
-    def _verify_paragraphs(self,
-                           para_to_utts: Dict[int, Set[int]],
-                           chap_id: str,
-                           spk_id: str):
-        """Verifies that given paragraphs are complete.
-
-        A paragraph is complete if:
-            1) All its utterances are contiguous.
-
-        Args:
-            para_to_utts: Mapping from paragraph IDs to sets of utterance IDs.
-            chap_id: Chapter ID.
-            spk_id: Speaker ID.
-        """
-
-        for para_id in para_to_utts:
-
-            if not self._is_chapter_complete(sorted(para_to_utts[para_id])):
-                _logger().debug('Paragraph %s of speaker %s in chapter %s is incomplete.',
-                                para_id, spk_id, chap_id)
 
     def _is_chapter_complete(self, utt_ids: List[int]) -> bool:
         """Checks if sorted utterances IDs are contiguous and start with 0."""
