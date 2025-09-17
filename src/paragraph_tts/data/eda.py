@@ -8,10 +8,11 @@ import matplotlib.pyplot as plt  # type: ignore
 
 from paragraph_tts import utils
 from paragraph_tts.data import preprocessing
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 _FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 
-def is_paragraph_valid(para_info: utils.path.ParagraphInfo) -> bool:
+def is_paragraph_valid(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
     """Returns True if the paragraph is valid."""
     return para_info.is_complete and len(para_info.utterances) >= 3
 
@@ -56,7 +57,7 @@ class FeaturesExtractor:
         """
 
         self._raw_ds_path = raw_ds_path
-        self._raw_path_handler = utils.path.RawLibriDirHandler(
+        self._raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(
             raw_ds_path
         )
         self._audio_processor = preprocessing.audio.AudioProcessor(
@@ -70,7 +71,7 @@ class FeaturesExtractor:
         )
         self._text_processor = preprocessing.text.TextProcessor()
 
-    def paragraph_as_lines(self, para_info: utils.path.ParagraphInfo) -> List[str]:
+    def paragraph_as_lines(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
 
         lines = []
@@ -82,7 +83,7 @@ class FeaturesExtractor:
 
         return lines
 
-    def paragraph_as_waveform(self, para_info: utils.path.ParagraphInfo) -> np.ndarray:
+    def paragraph_as_waveform(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> np.ndarray:
         """Returns the paragraph as a concatenated waveform."""
 
         waveforms = []
@@ -299,7 +300,7 @@ class FeaturesExtractor:
 
         return figures
 
-    def get_example_paragraphs(self) -> Iterator[utils.path.ParagraphInfo]:
+    def get_example_paragraphs(self) -> Iterator[raw_libri_dir_handler.ParagraphInfo]:
         """Returns example paragraphs from the dataset.
 
         The paragraphs are selected from valid and invalid ones.
@@ -325,7 +326,7 @@ class FeaturesExtractor:
             itertools.islice(invalid_paras, num_paras_needed)
         )
 
-    def get_outlier_utterances(self) -> Dict[str, Iterator[utils.path.UtteranceInfo]]:
+    def get_outlier_utterances(self) -> Dict[str, Iterator[raw_libri_dir_handler.UtteranceInfo]]:
         """Returns outlier utterances from the dataset.
 
         Outliers are either extremely short or extremely long utterances.
