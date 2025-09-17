@@ -2,5 +2,6 @@
 .venv/
 paragraph_tts.egg-info/
 tmp/
+tmp
 __pycache__/
 outputs/
