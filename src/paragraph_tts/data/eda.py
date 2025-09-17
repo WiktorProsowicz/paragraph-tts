@@ -26,7 +26,8 @@ def _calculate_basic_numerical_stats(data: _FixedLengthArrayType) -> Dict[str, f
         'std': float(np.std(data)),
         'q1': float(np.percentile(data, 25)),
         'q2': float(np.percentile(data, 50)),
-        'q3': float(np.percentile(data, 75))
+        'q3': float(np.percentile(data, 75)),
+        'count': int(len(data))
     }
 
 
@@ -151,6 +152,8 @@ class FeaturesExtractor:
         paragraphs_stats = {}
 
         n_utterances_in_paragraph = []
+        n_utterances_in_valid_paragraph = []
+        n_utterances_per_complete_paragraph = []
         n_incomplete_paragraphs = 0
         n_paragraphs = 0
         n_valid_paragraphs = 0  # Is complete and contains at least 3 utterances
@@ -160,6 +163,12 @@ class FeaturesExtractor:
 
                 for para_info in self._raw_path_handler.iter_paragraphs(spk_id, chap_id):
                     n_utterances_in_paragraph.append(len(para_info.utterances))
+
+                    if is_paragraph_valid(para_info):
+                        n_utterances_in_valid_paragraph.append(len(para_info.utterances))
+                    
+                    if para_info.is_complete:
+                        n_utterances_per_complete_paragraph.append(len(para_info.utterances))
 
                     if not para_info.is_complete:
                         n_incomplete_paragraphs += 1
@@ -171,6 +180,14 @@ class FeaturesExtractor:
 
         paragraphs_stats['utterances_per_paragraph'] = _calculate_basic_numerical_stats(
             n_utterances_in_paragraph
+        )
+
+        paragraphs_stats['utterances_per_valid_paragraph'] = _calculate_basic_numerical_stats(
+            n_utterances_in_valid_paragraph
+        )
+
+        paragraphs_stats['utterances_per_complete_paragraph'] = _calculate_basic_numerical_stats(
+            n_utterances_per_complete_paragraph
         )
 
         paragraphs_stats['num_incomplete_paragraphs'] = n_incomplete_paragraphs
