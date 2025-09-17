@@ -1,4 +1,4 @@
-"""Contains utilities for handling directory trees with pre-defined structure."""
+"""Contains utilities for handling paths in raw LibriTTS-R dataset."""
 
 from typing import Iterator, Dict, Set, Optional, List
 import dataclasses
@@ -34,7 +34,7 @@ class ProcessedLibriDirHandler:
 class UtteranceInfo:
     """Contains information about an utterance."""
 
-    utt_id: str
+    utt_id: int
     text_path: str
     wav_path: str
 
@@ -43,8 +43,9 @@ class UtteranceInfo:
 class ParagraphInfo:
     """Contains information about a paragraph."""
 
-    para_id: str
-    chap_id: str
+    spk_id: int
+    para_id: int
+    chap_id: int
     is_complete: bool
     utterances: list[UtteranceInfo]
 
@@ -66,22 +67,22 @@ class RawLibriDirHandler:
             split_path = os.path.join(self._raw_ds_path, ds_split)
 
             for spk_id in os.listdir(split_path):
-                self._spk_to_split[spk_id] = ds_split
+                self._spk_to_split[int(spk_id)] = ds_split
 
     @property
     def num_speakers(self) -> int:
         """Returns number of speakers in the dataset."""
         return len(self._spk_to_split)
 
-    def iter_speakers(self) -> Iterator[str]:
+    def iter_speakers(self) -> Iterator[int]:
         """Iterates over speaker IDs."""
 
         for ds_split in os.listdir(self._raw_ds_path):
             split_path = os.path.join(self._raw_ds_path, ds_split)
 
-            yield from os.listdir(split_path)
+            yield from map(int, os.listdir(split_path))
 
-    def iter_chapters(self, speaker_id: Optional[str] = None) -> Iterator[str]:
+    def iter_chapters(self, speaker_id: Optional[int] = None) -> Iterator[int]:
         """Iterates over chapter IDs for a given speaker."""
 
         speaker_ids = [speaker_id] if speaker_id is not None else list(self.iter_speakers())
@@ -90,7 +91,7 @@ class RawLibriDirHandler:
             speaker_path = os.path.join(
                 self._raw_ds_path,
                 self._spk_to_split[spk_id],
-                spk_id
+                str(spk_id)
             )
 
             yield from os.listdir(speaker_path)
@@ -102,7 +103,7 @@ class RawLibriDirHandler:
             for chap_id in self.iter_chapters(spk_id):
                 yield from self.iter_paragraphs(spk_id, chap_id)
 
-    def iter_paragraphs(self, spk_id: str, chapter_id: str) -> Iterator[ParagraphInfo]:
+    def iter_paragraphs(self, spk_id: int, chapter_id: int) -> Iterator[ParagraphInfo]:
         """Iterates over paragraphs in a chapter.
 
         Args:
@@ -113,8 +114,8 @@ class RawLibriDirHandler:
         chapter_path = os.path.join(
             self._raw_ds_path,
             self._spk_to_split[spk_id],
-            spk_id,
-            chapter_id
+            str(spk_id),
+            str(chapter_id)
         )
 
         para_to_utts = self._get_chap_and_utt_ids(chapter_id, spk_id)
@@ -145,13 +146,14 @@ class RawLibriDirHandler:
                 utterances.append(utt_info)
 
             yield ParagraphInfo(
+                spk_id=spk_id,
                 para_id=para_id,
                 chap_id=chapter_id,
                 utterances=utterances,
                 is_complete=self._is_chapter_complete(sorted(para_to_utts[para_id]))
             )
 
-    def iter_utterances_for_spk(self, spk_id: str) -> Iterator[UtteranceInfo]:
+    def iter_utterances_for_spk(self, spk_id: int) -> Iterator[UtteranceInfo]:
         """Iterates over all utterances for a given speaker."""
 
         for chap_id in self.iter_chapters(spk_id):
@@ -159,14 +161,14 @@ class RawLibriDirHandler:
                 yield from para_info.utterances
 
     def _get_chap_and_utt_ids(self,
-                              chap_id: str,
+                              chap_id: int,
                               spk_id) -> Dict[int, Set[int]]:
         """Gets mapping from paragraph IDs to sets of utterance IDs in a chapter."""
 
         chapter_path = os.path.join(self._raw_ds_path,
                                     self._spk_to_split[spk_id],
-                                    spk_id,
-                                    chap_id)
+                                    str(spk_id),
+                                    str(chap_id))
 
         name_pattern = re.compile(r'\d+_\d+_(\d+)_(\d+)\..+')
 
