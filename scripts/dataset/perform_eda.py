@@ -4,6 +4,7 @@ import os
 import logging
 import datetime
 import yaml  # type: ignore
+import json
 
 import soundfile
 import hydra
@@ -28,11 +29,13 @@ Notes:
       (begin, middle, end).
 """
 
+def _logger():
+    return logging.getLogger(__name__)
 
 def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
 
-    logging.info('Saving example paragraphs...')
+    _logger().info('Saving example paragraphs...')
 
     libri_metadata = librittsr_helpers.LibriTTSRMetadata()
 
@@ -66,7 +69,7 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
 def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
 
-    logging.info('Saving outlier utterances...')
+    _logger().info('Saving outlier utterances...')
     outliers = feature_extractor.get_outlier_utterances()
 
     for stat_type in outliers:
@@ -98,8 +101,10 @@ def main(script_cfg: omegaconf.DictConfig):
 
     utils.logging_utils.setup_logging('perform_eda')
 
+    _logger().info('Script configuration:\n%s', json.dumps(dict(script_cfg), indent=4))
+
     if not os.path.exists(script_cfg.raw_ds_path):
-        logging.critical('Cannot load raw dataset from a non-existing path: %s',
+        _logger().critical('Cannot load raw dataset from a non-existing path: %s',
                          script_cfg.raw_ds_path)
 
     os.makedirs(script_cfg.output_dir, exist_ok=True)
@@ -108,29 +113,29 @@ def main(script_cfg: omegaconf.DictConfig):
 
     feature_extractor = data.eda.FeaturesExtractor(script_cfg.raw_ds_path)
 
-    logging.info('Collecting speakers stats...')
+    _logger().info('Collecting speakers stats...')
     overall_stats['speakers_stats'] = feature_extractor.get_speakers_stats()
 
-    logging.info('Collecting chapters stats...')
+    _logger().info('Collecting chapters stats...')
     overall_stats['chapters_stats'] = feature_extractor.get_chapters_stats()
 
-    logging.info('Collecting paragraphs stats...')
+    _logger().info('Collecting paragraphs stats...')
     overall_stats['paragraphs_stats'] = feature_extractor.get_paragraphs_stats()
 
-    logging.info('Collecting utterances stats...')
+    _logger().info('Collecting utterances stats...')
     overall_stats['utterances_stats'] = feature_extractor.get_utterances_stats()
 
     with open(os.path.join(script_cfg.output_dir, 'overall_stats.yaml'), 'w', encoding='utf-8') as stats_f:
         yaml.dump(overall_stats, stats_f)
 
-    logging.info('Saving figures...')
+    _logger().info('Saving figures...')
     figures_dir = os.path.join(script_cfg.output_dir, 'figures')
     os.makedirs(figures_dir, exist_ok=True)
 
     for name, fig in feature_extractor.get_figures().items():
         fig_path = os.path.join(figures_dir, f'{name}.png')
         fig.savefig(fig_path, format='png', bbox_inches='tight')
-        logging.info('Saved figure: %s', fig_path)
+        _logger().info('Saved figure: %s', fig_path)
 
     _save_example_paragraphs(feature_extractor, script_cfg.output_dir)
 

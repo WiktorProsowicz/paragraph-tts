@@ -2,6 +2,7 @@
 
 from typing import List, Tuple, Dict, Any
 import dataclasses
+import logging
 
 import gruut
 from DeBERTa import deberta
@@ -67,6 +68,17 @@ class TextProcessor:
         '"?': '?"',
     }
 
+    apostrophe_replacements = {
+        ",'": ',"',
+        ".'": '."',
+        "!'": '!"',
+        "?'": '?"',
+        ":'": ':"',
+        " '": ' "',
+        "\"'": '""',
+        "'\"": '""',
+    }
+
     allowed_chars = (
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
@@ -80,19 +92,29 @@ class TextProcessor:
         vocab_path, vocab_type = deberta.load_vocab(pretrained_id='xxlarge-v2')
         self._tokenizer = deberta.tokenizers[vocab_type](vocab_path)
 
-    def clean_text(self, text: str) -> str:
-        """Cleans the text by removing unwanted characters."""
+    @staticmethod
+    def clean_text(text: str) -> str:
+        """Cleans the text by removing unwanted characters and fixing quotes."""
 
-        text = filter(lambda x: x in self.allowed_chars, text)
+        if text.startswith("'"):
+            text = '"' + text[1:]
+
+        if text.endswith("'"):
+            text = text[:-1] + '"'
+
+        for pattern, replacement in TextProcessor.apostrophe_replacements.items():
+            text = text.replace(pattern, replacement)
+
+        text = filter(lambda x: x in TextProcessor.allowed_chars, text)
         text = "".join(text)
         text = " ".join(text.split())
 
         return text
-    
+
     @staticmethod
     def load_text(text_path: str) -> str:
         """Loads text from a file."""
-        
+
         with open(text_path, 'r', encoding='utf-8') as text_f:
             return text_f.read().strip()
 
@@ -101,7 +123,8 @@ class TextProcessor:
 
         normalized_text = self._prepare_for_tokenization(text)
 
-        word_structs = self._get_word_structs(normalized_text.replace('"', '`'))
+        word_structs = self._get_word_structs(
+            normalized_text.replace('"', '`'))
         self._post_process_word_structs(word_structs)
 
         word_to_phoneme_spans = []
@@ -126,8 +149,6 @@ class TextProcessor:
             bert_tokens=bert_tokens,
             word_to_phoneme_spans=word_to_phoneme_spans,
             word_to_token_spans=word_to_token_spans)
-
-    
 
     def _prepare_for_tokenization(self, text: str) -> str:
         """Cleans the text and prepares it for tokenization."""
@@ -184,7 +205,8 @@ class TextProcessor:
         for word_struct in word_structs:
 
             word_phonemes = ' '.join(word_struct.phonemes)
-            word_phonemes = word_phonemes.replace('" !', '! "').replace('" ?', '? "')
+            word_phonemes = word_phonemes.replace(
+                '" !', '! "').replace('" ?', '? "')
             word_phonemes = word_phonemes.split(' ')
 
             text_with_punct = word_struct.text_with_punct
