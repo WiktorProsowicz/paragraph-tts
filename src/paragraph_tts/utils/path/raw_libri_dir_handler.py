@@ -67,6 +67,10 @@ class RawLibriDirHandler:
             split_path = os.path.join(self._raw_ds_path, ds_split)
 
             for spk_id in os.listdir(split_path):
+
+                if not os.path.isdir(os.path.join(split_path, spk_id)):
+                    continue
+
                 self._spk_to_split[int(spk_id)] = ds_split
 
     @property
@@ -80,12 +84,18 @@ class RawLibriDirHandler:
         for ds_split in os.listdir(self._raw_ds_path):
             split_path = os.path.join(self._raw_ds_path, ds_split)
 
-            yield from map(int, os.listdir(split_path))
+            for spk_id in os.listdir(split_path):
+
+                if not os.path.isdir(os.path.join(split_path, spk_id)):
+                    continue
+
+                yield int(spk_id)
 
     def iter_chapters(self, speaker_id: Optional[int] = None) -> Iterator[int]:
         """Iterates over chapter IDs for a given speaker."""
 
-        speaker_ids = [speaker_id] if speaker_id is not None else list(self.iter_speakers())
+        speaker_ids = [speaker_id] if speaker_id is not None else list(
+            self.iter_speakers())
 
         for spk_id in speaker_ids:
             speaker_path = os.path.join(
@@ -135,13 +145,10 @@ class RawLibriDirHandler:
                                              chapter_path,
                                              base_name + '.wav'))
 
-                for required_path in (
-                    utt_info.text_path,
-                    utt_info.wav_path
-                ):
-                    if not os.path.exists(required_path):
-                        _logger().warning('Required file %s does not exist!', required_path)
-                        break
+                if any(not os.path.exists(p) for p in (utt_info.text_path, utt_info.wav_path)):
+                    _logger().debug('Skipping utterance with missing files: %s.',
+                                      utt_info)
+                    continue
 
                 utterances.append(utt_info)
 
@@ -150,7 +157,8 @@ class RawLibriDirHandler:
                 para_id=para_id,
                 chap_id=chapter_id,
                 utterances=utterances,
-                is_complete=self._is_chapter_complete(sorted(para_to_utts[para_id]))
+                is_complete=self._is_chapter_complete(
+                    sorted(para_to_utts[para_id]))
             )
 
     def iter_utterances_for_spk(self, spk_id: int) -> Iterator[UtteranceInfo]:

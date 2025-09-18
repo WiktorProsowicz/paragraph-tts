@@ -9,6 +9,7 @@ import numpy as np
 from comp_trans_tts import (deepspeaker)  # type: ignore
 
 from paragraph_tts import (utils, data)
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 
@@ -16,7 +17,7 @@ class LibriTTSRPreprocessor:
     """Runs preprocessing on raw dataset."""
 
     def __init__(self,
-                 raw_path_handler: utils.path.RawLibriDirHandler,
+                 raw_path_handler: raw_libri_dir_handler.RawLibriDirHandler,
                  output_path: str,
                  multi_speaker: bool):
         """
