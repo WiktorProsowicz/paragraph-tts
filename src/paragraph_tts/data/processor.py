@@ -8,8 +8,9 @@ import torch
 import numpy as np
 from comp_trans_tts import (deepspeaker)  # type: ignore
 
-from paragraph_tts import data
+from paragraph_tts import (utils, data)
 from paragraph_tts.utils.path import raw_libri_dir_handler
+
 
 
 class LibriTTSRPreprocessor:
