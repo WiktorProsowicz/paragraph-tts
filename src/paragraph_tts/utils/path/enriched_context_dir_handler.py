@@ -1,15 +1,25 @@
 """Contains utilities for handling paths in generated enriched context for LibriTTS-R dataset."""
 
 import os
+from typing import List
 import json
 import logging
 import sys
+import dataclasses
 
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger():
     return logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class ContextForUtterance:
+    """Holds enriched context for a single utterance."""
+
+    preceding_sentences: List[str]
+    following_sentences: List[str]
 
 
 class EnrichedContextDirHandler:
@@ -36,12 +46,36 @@ class EnrichedContextDirHandler:
                               utterance: raw_libri_dir_handler.UtteranceInfo) -> bool:
         """Checks if contexts for given paragraph exist."""
 
-        utterance_contexts_path = self.path_for_utt_contexts(para_info, utterance)
+        utterance_contexts_path = self.path_for_utt_contexts(
+            para_info, utterance)
 
         if not os.path.exists(utterance_contexts_path):
             return False
 
         return True
+
+    def get_contexts_for(self,
+                         para_info: raw_libri_dir_handler.ParagraphInfo,
+                         utterance: raw_libri_dir_handler.UtteranceInfo
+                         ) -> List[ContextForUtterance]:
+        """Returns contexts for given utterance."""
+
+        utterance_contexts_path = self.path_for_utt_contexts(
+            para_info, utterance)
+
+        if not os.path.exists(utterance_contexts_path):
+            _logger().critical('No contexts found for utterance: %s', utterance)
+            sys.exit(1)
+
+        with open(utterance_contexts_path, 'r', encoding='utf-8') as f:
+            contexts_json = json.load(f)
+
+        return [
+            ContextForUtterance(
+                preceding_sentences=c['preceding_sentences'],
+                following_sentences=c['following_sentences']
+            ) for c in contexts_json
+        ]
 
     def path_for_utt_contexts(self, para_info: raw_libri_dir_handler.ParagraphInfo,
                               utterance: raw_libri_dir_handler.UtteranceInfo) -> str:
