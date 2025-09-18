@@ -2,17 +2,18 @@
 
 import json
 import os
-import asyncio
 import logging
 import sys
-import time
+import random
+import itertools
 
 import tqdm
 import hydra
 import omegaconf
 
 from paragraph_tts.data import enrichment
-from paragraph_tts.utils.path import (raw_libri_dir_handler, enriched_context_dir_handler)
+from paragraph_tts.utils.path import (
+    raw_libri_dir_handler, enriched_context_dir_handler)
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data.preprocessing import text as text_prep
@@ -50,11 +51,8 @@ def _prepare_utterance_for_enrichment(original_paragraph: raw_libri_dir_handler.
     )
 
 
-async def _gather_contexts(promises):
-    return await asyncio.gather(*(promises))
-
-
-def _enrich_paragraph_and_save(ds_metadata: librittsr_helpers.LibriTTSRMetadata,
+def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
+                               ds_metadata: librittsr_helpers.LibriTTSRMetadata,
                                raw_path_handler: raw_libri_dir_handler.RawLibriDirHandler,
                                para_info: raw_libri_dir_handler.ParagraphInfo,
                                script_cfg: omegaconf.DictConfig):
@@ -68,33 +66,48 @@ def _enrich_paragraph_and_save(ds_metadata: librittsr_helpers.LibriTTSRMetadata,
     utterances_to_enrich = [utt_info for utt_info in para_info.utterances
                             if not contexts_dir_handler.contains_contexts_for(para_info, utt_info)]
 
+    utterances_to_enrich = [utt_info for utt_info in utterances_to_enrich
+                            if _should_enrich_utterance(utt_info)]
+
+    n_enriched_utterances = 0
+
     for utt_info in utterances_to_enrich:
 
         utterance_for_enrichment = _prepare_utterance_for_enrichment(
             original_paragraph, utt_info, ds_metadata
         )
 
-        enricher = enrichment.ContextEnricher(model_name=script_cfg.model_name,
-                                        ollama_host=script_cfg.ollama_host,
-                                        max_paragraph_len=script_cfg.max_paragraph_len,
-                                        min_paragraph_len=script_cfg.min_paragraph_len)
-
-        promises = (
-            enricher.generate_context_for_utt(utterance_for_enrichment)
-            for _ in range(script_cfg.num_contexts_to_generate)
-        )
-
-        contexts = asyncio.run(_gather_contexts(promises))
+        contexts = [enricher.generate_context_for_utt(utterance_for_enrichment)
+                    for _ in range(script_cfg.num_contexts_to_generate)]
 
         if any(c is None for c in contexts):
-            _logger().warning('Failed to generate contexts for utterance: %s', utt_info)
-            continue
+            _logger().debug('Failed to generate some contexts for utterance: %s', utt_info)
 
-        utterance_contexts_path = contexts_dir_handler.path_for_utt_contexts(para_info, utt_info)
+        contexts = [c for c in contexts if c is not None]
+
+        utterance_contexts_path = contexts_dir_handler.path_for_utt_contexts(
+            para_info, utt_info)
         os.makedirs(os.path.dirname(utterance_contexts_path), exist_ok=True)
 
         with open(utterance_contexts_path, 'w', encoding='utf-8') as f:
             json.dump(contexts, f, indent=4, ensure_ascii=False)
+
+        n_enriched_utterances += 1
+
+    if n_enriched_utterances == 0:
+        _logger().info('No utterances were enriched for paragraph: %s', para_info)
+
+
+def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo):
+
+    text = text_prep.TextProcessor.load_text(para_info.text_path)
+    text = text_prep.TextProcessor.clean_text(text)
+
+    ends_as_a_whole = any(text.strip().endswith(p)
+                          for p in ('.', '!', '?', '"', ':'))
+    starts_as_a_whole = text[0].isupper() or text[0] == '"'
+
+    return ends_as_a_whole and starts_as_a_whole
 
 
 @hydra.main(version_base=None, config_path="cfg", config_name="enrich_context")
@@ -102,6 +115,8 @@ def main(script_cfg: omegaconf.DictConfig):
     """Performs context enrichment for dataset samples."""
 
     logging_utils.setup_logging('enrich_context')
+
+    _logger().info('Script configuration:\n%s', json.dumps(dict(script_cfg), indent=4))
 
     os.makedirs(script_cfg.output_path, exist_ok=True)
 
@@ -115,25 +130,39 @@ def main(script_cfg: omegaconf.DictConfig):
     with open(os.path.join(script_cfg.output_path, 'metadata.json'), 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=4)
 
-    if not enrichment.ContextEnricher.is_model_available(script_cfg.model_name,
-                                                         script_cfg.ollama_host):
+    enricher = enrichment.ContextEnricher(model_name=script_cfg.model_name,
+                                          ollama_host=script_cfg.ollama_host,
+                                          max_paragraph_len=script_cfg.max_paragraph_len,
+                                          min_paragraph_len=script_cfg.min_paragraph_len)
+
+    if not enricher.is_model_available(script_cfg.model_name):
         _logger().critical('The following model is unavailable at the Ollama server: %s',
                            script_cfg.model_name)
         sys.exit(1)
 
-    raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(script_cfg.raw_ds_path)
+    raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(
+        script_cfg.raw_ds_path)
 
     ds_metadata = librittsr_helpers.LibriTTSRMetadata()
 
-    for para_info in tqdm.tqdm(raw_path_handler.iter_all_paragraphs(),
+    paragraphs_to_enrich = list(raw_path_handler.iter_all_paragraphs())
+    random.shuffle(paragraphs_to_enrich)
+
+    for para_info in tqdm.tqdm(itertools.islice(paragraphs_to_enrich,
+                                                script_cfg.max_enriched_paragraph),
                                desc='Enriching context',
                                dynamic_ncols=True,
+                               total=script_cfg.max_enriched_paragraph,
                                miniters=1,
                                unit='paragraphs',
                                colour='#115b80'):
 
         _logger().debug('Enriching paragraph: %s', para_info)
-        _enrich_paragraph_and_save(ds_metadata, raw_path_handler, para_info, script_cfg)
+        _enrich_paragraph_and_save(enricher,
+                                   ds_metadata,
+                                   raw_path_handler,
+                                   para_info,
+                                   script_cfg)
 
 
 if __name__ == '__main__':

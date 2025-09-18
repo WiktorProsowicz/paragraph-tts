@@ -1,6 +1,5 @@
 """Contains utilities for context enrichment."""
 
-import asyncio
 from typing import List, Dict, Optional
 import logging
 import sys
@@ -36,36 +35,34 @@ class ContextEnricher:
     diversity of length, style and content."""
 
     LLM_TEMPLATE = """Your task is to generate context sentences for a given sentence. The sentence
-    comes from a book titled "{book_title}" read by a {speaker_gender} speaker. The sentence may
-    contain fragments of dialogues, be a part of a dialogue turn or a narrative passage. You will
-    be presented with an example context, coming from the same book, that contains the given
-    sentence. Pay attention to the given guidelines.
+	comes from a book titled "{book_title}" read by a {speaker_gender} speaker. Pay attention
+    to the given guidelines.
 
-    ### Given sentence
-    {input_sentence}
+	### Given sentence
+	{input_sentence}
 
-    ### Number of preceding sentences to generate
-    {n_of_preceding_sentences}
+	### Number of preceding sentences to generate
+	{n_of_preceding_sentences}
 
-    ### Number of following sentences to generate
-    {n_of_following_sentences}
+	### Number of following sentences to generate
+	{n_of_following_sentences}
 
-    ### Example context
-    {example_context}
+	### Guidelines:
+	1. The generated sentences should maintain coherence with the given sentence. That is, one
+	should be able to read the generated sentences as a natural continuation of the given sentence.
+	2. The generated sentences should exhibit a diverse range of lengths, styles, and content.
+    3. {sentences_length_guideline}
+	4. The output should adhere to the following json format:
+		{{
+			"preceding_sentences": LIST_OF_PRECEDING_SENTENCES_STRINGS,
+			"following_sentences": LIST_OF_FOLLOWING_SENTENCES_STRINGS
+		}}
+	5. DO NOT include any explanations or additional text outside of the JSON format.
+	6. Ensure that the JSON format is strictly followed, with proper use of brackets, commas, etc."""
 
-    ### Guidelines:
-    1. The generated sentences should maintain coherence with the given sentence. That is, one
-    should be able to read the generated sentences as a natural continuation of the given sentence.
-    2. The generated sentences should exhibit a diverse range of lengths, styles, and content.
-    3. Do not copy or paraphrase sentences from the example context.
-    4. The output should strictly adhere to the following json format:
-        {{
-            "preceding_sentences": LIST_OF_PRECEDING_SENTENCES_STRINGS,
-            "following_sentences": LIST_OF_FOLLOWING_SENTENCES_STRINGS
-        }}
-    5. DO NOT include any explanations or additional text outside of the JSON format.
-    6. Ensure that the JSON format is strictly followed, with proper use of brackets, commas, etc.
-    """
+    SHORT_SENTENCES_GUIDELINE = "Create short sentences (5-10 words each)."
+
+    LONG_SENTENCES_GUIDELINE = "Create long sentences (15-20 words each)."
 
     def __init__(self,
                  model_name: str,
@@ -79,29 +76,27 @@ class ContextEnricher:
         self._model_name = model_name
         self._ollama_host = ollama_host
 
-        self._ollama_client = ollama.AsyncClient(host=ollama_host)
+        self._ollama_client = ollama.Client(host=ollama_host)
 
-    async def generate_context_for_utt(self,
+    def generate_context_for_utt(self,
                                        utt: UtteranceForEnrichment
                                        ) -> Optional[Dict[str, List[str]]]:
         """Generates additional context for a given utterance.
-        
+
         Returns:
             A dictionary with two keys: 'preceding_sentences' and 'following_sentences', each
             containing a list of generated sentences. Returns None if generation fails.
         """
 
-        context_len = random.randint(self._min_paragraph_len, self._max_paragraph_len)
+        context_len = random.randint(
+            self._min_paragraph_len, self._max_paragraph_len)
         n_of_preceding_sentences = random.randint(0, context_len)
         n_of_following_sentences = context_len - n_of_preceding_sentences
 
         gender = 'male' if utt.speaker.gender == 'M' else 'female'
 
-        example_context = ' '.join((
-            ' '.join(utt.original_preceding_sentences),
-            utt.text,
-            ' '.join(utt.original_following_sentences)
-        ))
+        length_guideline = random.choice(
+            [self.SHORT_SENTENCES_GUIDELINE, self.LONG_SENTENCES_GUIDELINE])
 
         user_prompt = self.LLM_TEMPLATE.format(
             book_title=utt.book.title,
@@ -109,13 +104,13 @@ class ContextEnricher:
             input_sentence=utt.text,
             n_of_preceding_sentences=n_of_preceding_sentences,
             n_of_following_sentences=n_of_following_sentences,
-            example_context=example_context
+            sentences_length_guideline=length_guideline
         )
 
         _logger().debug('Generating context (%d preceding, %d following) for: %s',
                         n_of_preceding_sentences, n_of_following_sentences, utt)
 
-        response = await self._ollama_client.chat(self._model_name,
+        response = self._ollama_client.chat(self._model_name,
                                                   messages=[
                                                       {
                                                           'role': 'system',
@@ -133,11 +128,10 @@ class ContextEnricher:
                                                      n_of_preceding_sentences,
                                                      n_of_following_sentences)
 
-    @staticmethod
-    def is_model_available(model_name: str, ollama_host: str) -> bool:
+    def is_model_available(self, model_name: str) -> bool:
         """Checks if a given model is available on the Ollama server."""
-        ollama_client = ollama.Client(host=ollama_host)
-        available_models = ollama_client.list().models  # pylint: disable=no-member
+
+        available_models = self._ollama_client.list().models  # pylint: disable=no-member
         return any(model.model == model_name for model in available_models)
 
     def _retrieve_contexts_from_response(self,
