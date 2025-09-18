@@ -5,3 +5,4 @@ tmp/
 tmp
 __pycache__/
 outputs/
+log/

@@ -5,6 +5,7 @@ import os
 import pathlib
 from typing import Any
 from typing import Dict
+import datetime
 
 import yaml  # type: ignore
 
@@ -12,19 +13,25 @@ UTILITIES_HOME = pathlib.Path(__file__).absolute().parent.as_posix()
 LOGGING_CONFIG_PATH = os.path.join(UTILITIES_HOME, 'res', 'logging_cfg.yaml')
 
 
-def setup_logging() -> None:
+def setup_logging(script_signature: str) -> None:
     """Sets up project-wide logging configuration.
 
     This function should be called at the
     beginning of the scripts run from the console.
+
+    Args:
+        script_signature: Name of the script from which the function is called. Will be used to
+            determine the log file name.
     """
 
-    logging_config = _get_logging_config()
+    logging_config = _get_logging_config(script_signature)
+
+    os.makedirs(f'log/{script_signature}/', exist_ok=True)
 
     logging.config.dictConfig(logging_config)
 
 
-def _get_logging_config() -> Dict[str, Any]:
+def _get_logging_config(script_signature: str) -> Dict[str, Any]:
     """Creates a global logging configuration.
 
     Returns:
@@ -38,8 +45,11 @@ def _get_logging_config() -> Dict[str, Any]:
         config_dict = yaml.safe_load(config_file.read())
 
     for _, formatter in config_dict['formatters'].items():
-        if formatter['()'] in custom_formatters:
+        if '()' in formatter and formatter['()'] in custom_formatters:
             formatter['()'] = custom_formatters[formatter['()']]
+
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    config_dict['handlers']['file_hand']['filename'] = f'log/{script_signature}/{timestamp}.log'
 
     return config_dict
 
@@ -70,7 +80,7 @@ class _ColorFormatter(logging.Formatter):
 
 if __name__ == '__main__':
 
-    setup_logging()
+    setup_logging('logging_utils')
 
     logging.debug('This is a debug message.')
     logging.info('This is an info message.')

@@ -82,8 +82,7 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
 def main(script_cfg: omegaconf.DictConfig):
     """Runs LibriTTS-R Exploratory Data Analysis."""
 
-    utils.logging_utils.setup_logging()
-    logging.getLogger('paragraph_tts.utils.path').setLevel(logging.INFO)
+    utils.logging_utils.setup_logging('perform_eda')
 
     if not os.path.exists(script_cfg.raw_ds_path):
         logging.critical('Cannot load raw dataset from a non-existing path: %s',
