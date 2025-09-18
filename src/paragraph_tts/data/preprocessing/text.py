@@ -88,6 +88,13 @@ class TextProcessor:
         text = " ".join(text.split())
 
         return text
+    
+    @staticmethod
+    def load_text(text_path: str) -> str:
+        """Loads text from a file."""
+        
+        with open(text_path, 'r', encoding='utf-8') as text_f:
+            return text_f.read().strip()
 
     def tokenize_text(self, text: str) -> TextFeatures:
         """Processes and tokenizes text."""

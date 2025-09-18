@@ -77,8 +77,8 @@ class FeaturesExtractor:
         lines = []
 
         for utt in para_info.utterances:
-            with open(utt.text_path, 'r', encoding='utf-8') as text_f:
-                text = self._text_processor.clean_text(text_f.read())
+            text = self._text_processor.load_text(utt.text_path)
+            text = self._text_processor.clean_text(text)
             lines.append(f'{utt.utt_id}: {text}')
 
         return lines
@@ -348,9 +348,7 @@ class FeaturesExtractor:
         for spk_id in self._raw_path_handler.iter_speakers():
             for utterance in self._raw_path_handler.iter_utterances_for_spk(spk_id):
 
-                with open(utterance.text_path, 'r', encoding='utf-8') as text_f:
-                    text = text_f.read()
-
+                text = self._text_processor.load_text(utterance.text_path)
                 text_norm = self._text_processor.clean_text(text)
 
                 n_words = len(text_norm.split())
@@ -425,8 +423,7 @@ class FeaturesExtractor:
         for spk_id in self._raw_path_handler.iter_speakers():
             for utterance in self._raw_path_handler.iter_utterances_for_spk(spk_id):
 
-                with open(utterance.text_path, 'r', encoding='utf-8') as text_f:
-                    text = text_f.read()
+                text = self._text_processor.load_text(utterance.text_path)
 
                 if any(p in text for p in self._text_processor.single_puncts_replace):
                     stats['has_single_punctuations'].append(1)

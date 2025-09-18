@@ -9,6 +9,7 @@ import soundfile
 import hydra
 import omegaconf
 from paragraph_tts import (data, utils)
+from paragraph_tts.data.preprocessing import text as text_prep
 
 RESULTS_DESC = """
 Generated at {time}.
@@ -64,8 +65,7 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
                 utt_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.txt')
                 wav_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.wav')
 
-                with open(utt_info.text_path, 'r', encoding='utf-8') as text_f:
-                    text = text_f.read().strip()
+                text = text_prep.TextProcessor.load_text(utt_info.text_path)
 
                 with open(utt_info.wav_path, 'rb') as src_wav_f:
                     wav_data = src_wav_f.read()
