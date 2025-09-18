@@ -5,6 +5,8 @@ import dataclasses
 import os
 import re
 import logging
+import sys
+import csv
 
 
 def _logger():
@@ -49,6 +51,17 @@ class ParagraphInfo:
     is_complete: bool
     utterances: list[UtteranceInfo]
 
+@dataclasses.dataclass
+class OriginalParagraph:
+    """Contains all original sentences in a paragraph.
+    
+    The sentences are not necessarily present in the dataset as wav samples.
+    """
+
+    spk_id: int
+    chap_id: int
+    para_id: int
+    sentences: Dict[int, str]
 
 class RawLibriDirHandler:
     """Manages access to contents of raw LibriTTS-R dataset."""
@@ -104,7 +117,7 @@ class RawLibriDirHandler:
                 str(spk_id)
             )
 
-            yield from os.listdir(speaker_path)
+            yield from map(int, os.listdir(speaker_path))
 
     def iter_all_paragraphs(self) -> Iterator[ParagraphInfo]:
         """Iterates over all paragraphs in the dataset."""
@@ -167,6 +180,42 @@ class RawLibriDirHandler:
         for chap_id in self.iter_chapters(spk_id):
             for para_info in self.iter_paragraphs(spk_id, chap_id):
                 yield from para_info.utterances
+
+    def get_original_paragraph(self, para_info: ParagraphInfo) -> OriginalParagraph:
+        """Returns original, complete version of a paragraph."""
+
+        books_file_path = os.path.join(
+            self._raw_ds_path,
+            self._spk_to_split[para_info.spk_id],
+            str(para_info.spk_id),
+            str(para_info.chap_id),
+            f'{para_info.spk_id}_{para_info.chap_id}.book.tsv')
+
+        if not os.path.exists(books_file_path):
+            _logger().critical('Missing .books.tsv file: %s', books_file_path)
+            sys.exit(1)
+
+        sought_id_prefix = f'{para_info.spk_id}_{para_info.chap_id}_{para_info.para_id:06d}'
+
+        context_sentences: Dict[int ,str] = {}
+
+        with open(books_file_path, 'r', encoding='utf-8') as f:
+
+            proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
+                                 csv.reader(f, delimiter='\t'))
+
+            for row in proper_rows:
+                utt_id = int(row[0].split('_')[-1])
+                sentence = row[2].strip()
+
+                context_sentences[utt_id] = sentence
+
+        return OriginalParagraph(
+            spk_id=para_info.spk_id,
+            chap_id=para_info.chap_id,
+            para_id=para_info.para_id,
+            sentences=context_sentences
+        )
 
     def _get_chap_and_utt_ids(self,
                               chap_id: int,

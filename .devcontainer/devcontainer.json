@@ -29,6 +29,8 @@
 		"--gpus",
 		"all",
 		"--shm-size",
-		"512m"
+		"512m",
+		"--net",
+		"host"
 	]
 }

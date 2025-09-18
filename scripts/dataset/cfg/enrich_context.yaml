@@ -1,0 +1,7 @@
+model_name: mistral:7b
+ollama_host: http://localhost:11434
+raw_ds_path: tmp/LibriTTS_R
+output_path: tmp/enriched_context
+max_paragraph_len: 6
+min_paragraph_len: 3
+num_contexts_to_generate: 1
