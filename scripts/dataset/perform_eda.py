@@ -10,6 +10,7 @@ import hydra
 import omegaconf
 from paragraph_tts import (data, utils)
 from paragraph_tts.data.preprocessing import text as text_prep
+from paragraph_tts.data import librittsr_helpers
 
 RESULTS_DESC = """
 Generated at {time}.
@@ -17,6 +18,8 @@ This directory contains results of EDA on LibriTTS-R dataset:
 
 - overall_stats.yaml: Overall statistics collected during EDA.
 - figures/: Directory with various figures visualizing the dataset.
+- example_paragraphs/: Directory with example paragraphs from the dataset.
+- outlier_utterances/: Directory with outlier utterances based on various statistics (e.g word count)
 
 Notes:
     - A paragraph is considered complete if it contains all utterances from 0 to N
@@ -30,34 +33,45 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
 
     logging.info('Saving example paragraphs...')
-    examples_dir = os.path.join(output_dir, 'example_paragraphs')
-    os.makedirs(examples_dir, exist_ok=True)
 
-    for para_idx, para_info in enumerate(feature_extractor.get_example_paragraphs()):
-        para_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.txt')
-        with open(para_path, 'w', encoding='utf-8') as para_f:
-            para_f.write(f'Paragraph ID: {para_info.para_id}\n')
-            para_f.write(f'Chapter ID: {para_info.chap_id}\n')
-            para_f.write(f'Is valid: {data.eda.is_paragraph_valid(para_info)}\n')
-            para_f.write(f'Is complete: {para_info.is_complete}\n')
+    libri_metadata = librittsr_helpers.LibriTTSRMetadata()
 
-            for line in feature_extractor.paragraph_as_lines(para_info):
-                para_f.write(f'{line}\n')
+    for example_type, paragraphs in feature_extractor.get_example_paragraphs().items():
 
-            if data.eda.is_paragraph_valid(para_info):
-                wav = feature_extractor.paragraph_as_waveform(para_info)
-                wav_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.wav')
-                soundfile.write(wav_path, wav, samplerate=22050)
+        examples_dir = os.path.join(output_dir, 'example_paragraphs', example_type)
+        os.makedirs(examples_dir, exist_ok=True)
+
+        for para_idx, para_info in enumerate(paragraphs):
+            
+            speaker, book = libri_metadata.get_speaker_and_book(para_info.spk_id, para_info.chap_id)
+
+            para_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.txt')
+            with open(para_path, 'w', encoding='utf-8') as para_f:
+                para_f.write(f'Paragraph ID: {para_info.para_id}\n')
+                para_f.write(f'Chapter ID: {para_info.chap_id}\n')
+                para_f.write(f'Speaker: {speaker.name}\n')
+                para_f.write(f'Book: {book.title}\n')
+                para_f.write(f'Is valid: {data.eda.is_paragraph_valid(para_info)}\n')
+                para_f.write(f'Is complete: {para_info.is_complete}\n')
+
+                for line in feature_extractor.paragraph_as_lines(para_info):
+                    para_f.write(f'{line}\n')
+
+                if data.eda.is_paragraph_valid(para_info):
+                    wav = feature_extractor.paragraph_as_waveform(para_info)
+                    wav_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.wav')
+                    soundfile.write(wav_path, wav, samplerate=22050)
+
 
 def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
-    
+
     logging.info('Saving outlier utterances...')
     outliers = feature_extractor.get_outlier_utterances()
 
     for stat_type in outliers:
         for outlier_type, utterances in outliers[stat_type].items():
-            
+
             outliers_dir = os.path.join(output_dir, 'outlier_utterances', stat_type)
             os.makedirs(outliers_dir, exist_ok=True)
 
@@ -69,7 +83,7 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
 
                 with open(utt_info.wav_path, 'rb') as src_wav_f:
                     wav_data = src_wav_f.read()
-                
+
                 with open(utt_path, 'w', encoding='utf-8') as utt_f:
                     utt_f.write(f'Utterance ID: {utt_info.utt_id}\n')
                     utt_f.write(f'Text: {text}\n')

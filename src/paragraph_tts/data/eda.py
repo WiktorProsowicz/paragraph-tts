@@ -12,9 +12,18 @@ from paragraph_tts.utils.path import raw_libri_dir_handler
 
 _FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 
+
 def is_paragraph_valid(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
     """Returns True if the paragraph is valid."""
     return para_info.is_complete and len(para_info.utterances) >= 3
+
+
+def is_sentence_whole(text: str) -> bool:
+    """Returns True if the text is a whole sentence."""
+
+    ends_as_a_whole = any(text.strip().endswith(p) for p in ('.', '!', '?', '"', ':'))
+    starts_as_a_whole = text[0].isupper() or text[0] == '"'
+    return ends_as_a_whole and starts_as_a_whole
 
 
 def _calculate_basic_numerical_stats(data: _FixedLengthArrayType) -> Dict[str, float]:
@@ -36,14 +45,15 @@ def _is_outlier_lower(value: float | int, q1: float, q3: float) -> bool:
     """Tells if the value is a lower outlier based on IQR rule."""
     return value < (q1 - 1.5 * (q3 - q1))
 
+
 def _is_upper_outlier(value: float | int, q1: float, q3: float) -> bool:
     """Tells if the value is an upper outlier based on IQR rule."""
     return value > (q3 + 1.5 * (q3 - q1))
 
+
 def _is_outlier(value: float | int, q1: float, q3: float) -> bool:
     """Tells if the value is an outlier based on IQR rule."""
     return _is_outlier_lower(value, q1, q3) or _is_upper_outlier(value, q1, q3)
-
 
 
 class FeaturesExtractor:
@@ -167,7 +177,7 @@ class FeaturesExtractor:
 
                     if is_paragraph_valid(para_info):
                         n_utterances_in_valid_paragraph.append(len(para_info.utterances))
-                    
+
                     if para_info.is_complete:
                         n_utterances_per_complete_paragraph.append(len(para_info.utterances))
 
@@ -215,6 +225,9 @@ class FeaturesExtractor:
 
         utterances_stats['num_utterances_with_isolated_punctuations'] = sum(
             stats_per_utterance['has_single_punctuations'])
+
+        utterances_stats['num_utterances_which_are_whole_sentences'] = sum(
+            stats_per_utterance['is_whole_sentence'])
 
         total_dur = np.sum(stats_per_utterance['lengths_sec']) / 3600.0
         utterances_stats['total_duration (hours)'] = float(total_dur)
@@ -300,31 +313,38 @@ class FeaturesExtractor:
 
         return figures
 
-    def get_example_paragraphs(self) -> Iterator[raw_libri_dir_handler.ParagraphInfo]:
+    def get_example_paragraphs(self) -> Dict[str, Iterator[raw_libri_dir_handler.ParagraphInfo]]:
         """Returns example paragraphs from the dataset.
 
-        The paragraphs are selected from valid and invalid ones.
+        The paragraphs are selected from the following groups:
+            - Valid paragraphs
+            - Invalid paragraphs
+            - Paragraphs containing at least one non-whole sentence utterance
         """
 
-        valid_paras = filter(
-            is_paragraph_valid,
-            self._raw_path_handler.iter_all_paragraphs())
-        invalid_paras = itertools.filterfalse(
-            is_paragraph_valid,
-            self._raw_path_handler.iter_all_paragraphs())
+        def contains_non_whole_sentence(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
+            for utt in para_info.utterances:
+                text = self._text_processor.load_text(utt.text_path)
+                text = self._text_processor.clean_text(text)
 
-        valid_paras = list(valid_paras)
-        invalid_paras = list(invalid_paras)
+                if not is_sentence_whole(text):
+                    return True
 
-        random.shuffle(valid_paras)
-        random.shuffle(invalid_paras)
+            return False
 
-        num_paras_needed = min(5, len(valid_paras), len(invalid_paras))
+        all_paragraphs = list(self._raw_path_handler.iter_all_paragraphs())
+        random.shuffle(all_paragraphs)
 
-        return itertools.chain(
-            itertools.islice(valid_paras, num_paras_needed),
-            itertools.islice(invalid_paras, num_paras_needed)
-        )
+        valid_paras = filter(is_paragraph_valid, all_paragraphs)
+        invalid_paras = itertools.filterfalse(is_paragraph_valid, all_paragraphs)
+        paras_with_non_whole_sentence = filter(contains_non_whole_sentence, all_paragraphs)
+
+        return {
+            'valid_paragraphs': itertools.islice(valid_paras, 10),
+            'invalid_paragraphs': itertools.islice(invalid_paras, 10),
+            'paragraphs_with_non_whole_sentence': itertools.islice(paras_with_non_whole_sentence,
+                                                                   20)
+        }
 
     def get_outlier_utterances(self) -> Dict[str, Iterator[raw_libri_dir_handler.UtteranceInfo]]:
         """Returns outlier utterances from the dataset.
@@ -417,7 +437,8 @@ class FeaturesExtractor:
         stats = {
             'word_counts': [],
             'lengths_sec': [],
-            'has_single_punctuations': []
+            'has_single_punctuations': [],
+            'is_whole_sentence': []
         }
 
         for spk_id in self._raw_path_handler.iter_speakers():
@@ -427,8 +448,15 @@ class FeaturesExtractor:
 
                 if any(p in text for p in self._text_processor.single_puncts_replace):
                     stats['has_single_punctuations'].append(1)
+                else:
+                    stats['has_single_punctuations'].append(0)
 
                 text_norm = self._text_processor.clean_text(text)
+
+                if is_sentence_whole(text_norm):
+                    stats['is_whole_sentence'].append(1)
+                else:
+                    stats['is_whole_sentence'].append(0)
 
                 n_words = len(text_norm.split())
                 stats['word_counts'].append(n_words)
