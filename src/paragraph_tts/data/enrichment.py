@@ -37,7 +37,7 @@ class ContextEnricher:
 
     LLM_TEMPLATE = """Your task is to generate context sentences for a given sentence. The sentence
 	comes from a book titled "{book_title}" read by a {speaker_gender} speaker. Pay attention
-    to the given guidelines.
+	to the given guidelines.
 
 	### Given sentence
 	{input_sentence}
@@ -50,38 +50,48 @@ class ContextEnricher:
 
 	### Guidelines:
 	1. The generated sentences should maintain coherence with the given sentence. That is, one
-	should be able to read the generated sentences as a natural continuation of the given sentence.
-	2. The generated sentences should exhibit a diverse range of lengths, styles, and content.
-    3. {sentences_length_guideline}
-	4. The output should adhere to the following json format:
-		{{
-			"preceding_sentences": LIST_OF_PRECEDING_SENTENCES_STRINGS,
-			"following_sentences": LIST_OF_FOLLOWING_SENTENCES_STRINGS
-		}}
-	5. DO NOT include any explanations or additional text outside of the JSON format.
-	6. Ensure that the JSON format is strictly followed, with proper use of brackets, commas, etc."""
+	should be able to read the generated sentences as if they were extracted from the original book.
+	2. {sentences_length_guideline}
+	3. The output should adhere to the following json format:
+		It should be a single JSON object with two fields:
+		- "preceding_sentences": a list of strings with the generated preceding sentences.
+		- "following_sentences": a list of strings with the generated following sentences.
+	4. DO NOT include any explanations or additional text outside of the JSON format.
+	5. Ensure that the JSON format is strictly followed, with proper use of brackets, commas, etc.
+    6. Return exactly as much sentences as requested, no more no less."""
 
-    SHORT_SENTENCES_GUIDELINE = "Create short sentences (5-10 words each)."
+    SHORT_SENTENCES_GUIDELINE = 'Create short sentences (5-10 words each).'
 
-    LONG_SENTENCES_GUIDELINE = "Create long sentences (15-20 words each)."
+    LONG_SENTENCES_GUIDELINE = 'Create long sentences (15-20 words each).'
 
     def __init__(self,
                  model_name: str,
                  ollama_host: str,
                  max_paragraph_len: int,
-                 min_paragraph_len: int):
+                 min_paragraph_len: int,
+                 should_retry: bool = True):
+        """Initializes the ContextEnricher.
+
+        Args:
+            model_name: The name of the LLM model to use for context generation.
+            ollama_host: The host address of the Ollama server.
+            max_paragraph_len: The maximum number of context sentences to generate.
+            min_paragraph_len: The minimum number of context sentences to generate.
+            should_retry: Whether to retry generation if the LLM response is invalid.
+        """
 
         self._max_paragraph_len = max_paragraph_len
         self._min_paragraph_len = min_paragraph_len
 
         self._model_name = model_name
         self._ollama_host = ollama_host
+        self._should_retry = should_retry
 
         self._ollama_client = ollama.Client(host=ollama_host)
 
     def generate_context_for_utt(self,
-                                       utt: UtteranceForEnrichment
-                                       ) -> Optional[Dict[str, List[str]]]:
+                                 utt: UtteranceForEnrichment
+                                 ) -> Optional[Dict[str, List[str]]]:
         """Generates additional context for a given utterance.
 
         Returns:
@@ -90,9 +100,22 @@ class ContextEnricher:
         """
 
         context_len = random.randint(
-            self._min_paragraph_len, self._max_paragraph_len)
-        n_of_preceding_sentences = random.randint(0, context_len)
-        n_of_following_sentences = context_len - n_of_preceding_sentences
+            self._min_paragraph_len - 1, self._max_paragraph_len - 1)
+
+        if utt.original_following_sentences or utt.original_preceding_sentences:
+
+            if not utt.original_following_sentences:
+                n_of_preceding_sentences = context_len
+                n_of_following_sentences = 0
+
+            else:
+                n_of_preceding_sentences = 0
+                n_of_following_sentences = context_len
+
+        else:
+
+            n_of_preceding_sentences = random.randint(1, context_len - 1)
+            n_of_following_sentences = context_len - n_of_preceding_sentences
 
         gender = 'male' if utt.speaker.gender == 'M' else 'female'
 
@@ -111,29 +134,53 @@ class ContextEnricher:
         _logger().debug('Generating context (%d preceding, %d following) for: %s',
                         n_of_preceding_sentences, n_of_following_sentences, utt)
 
-        response = self._ollama_client.chat(self._model_name,
-                                                  messages=[
-                                                      {
-                                                          'role': 'system',
-                                                          'content': self.SYSTEM_MESSAGE
-                                                      },
-                                                      {
-                                                          'role': 'user',
-                                                          'content': user_prompt
-                                                      }
-                                                  ])
+        contexts = self._generate_contexts(
+            prompt=user_prompt,
+            n_of_preceding_sentences=n_of_preceding_sentences,
+            n_of_following_sentences=n_of_following_sentences
+        )
 
-        _logger().debug('Received response: %s', response)
+        if contexts is None and self._should_retry:
+            _logger().debug('Retrying context generation for utterance: %s', utt)
 
-        return self._retrieve_contexts_from_response(response,
-                                                     n_of_preceding_sentences,
-                                                     n_of_following_sentences)
+            return self._generate_contexts(
+                prompt=user_prompt,
+                n_of_preceding_sentences=n_of_preceding_sentences,
+                n_of_following_sentences=n_of_following_sentences
+            )
+
+        return contexts
 
     def is_model_available(self, model_name: str) -> bool:
         """Checks if a given model is available on the Ollama server."""
 
         available_models = self._ollama_client.list().models  # pylint: disable=no-member
         return any(model.model == model_name for model in available_models)
+
+    def _generate_contexts(self,
+                           prompt: str,
+                           n_of_preceding_sentences: int,
+                           n_of_following_sentences: int
+                           ) -> Optional[Dict[str, List[str]]]:
+        """Generates contexts using the LLM and retrieves them from the response."""
+
+        response = self._ollama_client.chat(self._model_name,
+                                            messages=[
+                                                {
+                                                    'role': 'system',
+                                                    'content': self.SYSTEM_MESSAGE
+                                                },
+                                                {
+                                                    'role': 'user',
+                                                    'content': prompt
+                                                }
+                                            ])
+
+        _logger().debug('Received response: %s', response)
+
+        return self._retrieve_contexts_from_response(response,
+                                                     n_of_preceding_sentences,
+                                                     n_of_following_sentences)
 
     def _retrieve_contexts_from_response(self,
                                          response: ollama.ChatResponse,
