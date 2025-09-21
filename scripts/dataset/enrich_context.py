@@ -103,11 +103,7 @@ def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo):
     text = text_prep.TextProcessor.load_text(para_info.text_path)
     text = text_prep.TextProcessor.clean_text(text)
 
-    ends_as_a_whole = any(text.strip().endswith(p)
-                          for p in ('.', '!', '?', '"', ':'))
-    starts_as_a_whole = text[0].isupper() or text[0] == '"'
-
-    return ends_as_a_whole and starts_as_a_whole
+    return librittsr_helpers.is_sentence_whole(text)
 
 
 @hydra.main(version_base=None, config_path="cfg", config_name="enrich_context")

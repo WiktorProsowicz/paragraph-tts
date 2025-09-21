@@ -79,3 +79,41 @@ class LibriTTSRMetadata:
             self._speakers[str(spk_id)],
             self._reader_book_mapping[(str(spk_id), str(chapter_id))]
         )
+
+
+def _count_left_quotes(text: str) -> int:
+
+    n_quotes = 0
+
+    if text.startswith('"'):
+        n_quotes += 1
+
+    n_quotes += text.count(' "')
+
+    return n_quotes
+
+
+def _count_right_quotes(text: str) -> int:
+
+    n_quotes = 0
+
+    if text.endswith('"'):
+        n_quotes += 1
+
+    for pattern in ('".', '"!', '"?', '",', '";', '":', '" '):
+        n_quotes += text.count(pattern)
+
+    return n_quotes
+
+
+def is_sentence_whole(text: str) -> bool:
+    """Returns True if the text is a whole sentence.
+
+    A whole sentence does not contain fragmented sub-sentences or dialogue parts.
+    """
+
+    ends_as_a_whole = any(text.strip().endswith(p) for p in ('.', '!', '?', '"', ':'))
+    starts_as_a_whole = text[0].isupper() or text[0] == '"'
+    has_even_quotes = _count_left_quotes(text) == _count_right_quotes(text)
+
+    return ends_as_a_whole and starts_as_a_whole and has_even_quotes

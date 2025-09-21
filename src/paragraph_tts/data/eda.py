@@ -6,7 +6,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt  # type: ignore
 
-from paragraph_tts import utils
+from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data import preprocessing
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
@@ -16,14 +16,6 @@ _FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 def is_paragraph_valid(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
     """Returns True if the paragraph is valid."""
     return para_info.is_complete and len(para_info.utterances) >= 3
-
-
-def is_sentence_whole(text: str) -> bool:
-    """Returns True if the text is a whole sentence."""
-
-    ends_as_a_whole = any(text.strip().endswith(p) for p in ('.', '!', '?', '"', ':'))
-    starts_as_a_whole = text[0].isupper() or text[0] == '"'
-    return ends_as_a_whole and starts_as_a_whole
 
 
 def _calculate_basic_numerical_stats(data: _FixedLengthArrayType) -> Dict[str, float]:
@@ -327,7 +319,7 @@ class FeaturesExtractor:
                 text = self._text_processor.load_text(utt.text_path)
                 text = self._text_processor.clean_text(text)
 
-                if not is_sentence_whole(text):
+                if not librittsr_helpers.is_sentence_whole(text):
                     return True
 
             return False
@@ -453,7 +445,7 @@ class FeaturesExtractor:
 
                 text_norm = self._text_processor.clean_text(text)
 
-                if is_sentence_whole(text_norm):
+                if librittsr_helpers.is_sentence_whole(text_norm):
                     stats['is_whole_sentence'].append(1)
                 else:
                     stats['is_whole_sentence'].append(0)
