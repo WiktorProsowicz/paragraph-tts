@@ -31,10 +31,6 @@ class EnrichedContextDirHandler:
             contexts_path: Path to enriched contexts directory.
         """
 
-        if not os.path.exists(contexts_path):
-            _logger().warning("Enriched contexts directory does not exist: %s", contexts_path)
-            sys.exit(1)
-
         self._contexts_path = contexts_path
 
         metadata_path = os.path.join(contexts_path, 'metadata.json')
@@ -42,12 +38,10 @@ class EnrichedContextDirHandler:
             self._metadata = json.load(f)
 
     def contains_contexts_for(self,
-                              para_info: raw_libri_dir_handler.ParagraphInfo,
                               utterance: raw_libri_dir_handler.UtteranceInfo) -> bool:
         """Checks if contexts for given paragraph exist."""
 
-        utterance_contexts_path = self.path_for_utt_contexts(
-            para_info, utterance)
+        utterance_contexts_path = self.path_for_utt_contexts(utterance)
 
         if not os.path.exists(utterance_contexts_path):
             return False
@@ -55,13 +49,11 @@ class EnrichedContextDirHandler:
         return True
 
     def get_contexts_for(self,
-                         para_info: raw_libri_dir_handler.ParagraphInfo,
                          utterance: raw_libri_dir_handler.UtteranceInfo
                          ) -> List[ContextForUtterance]:
         """Returns contexts for given utterance."""
 
-        utterance_contexts_path = self.path_for_utt_contexts(
-            para_info, utterance)
+        utterance_contexts_path = self.path_for_utt_contexts(utterance)
 
         if not os.path.exists(utterance_contexts_path):
             _logger().critical('No contexts found for utterance: %s', utterance)
@@ -77,19 +69,18 @@ class EnrichedContextDirHandler:
             ) for c in contexts_json
         ]
 
-    def path_for_utt_contexts(self, para_info: raw_libri_dir_handler.ParagraphInfo,
-                              utterance: raw_libri_dir_handler.UtteranceInfo) -> str:
+    def path_for_utt_contexts(self, utterance: raw_libri_dir_handler.UtteranceInfo) -> str:
         """Returns path to json file with contexts for given utterance."""
 
-        file_name = '{spk}_{cha}_{para:06d}_{utt:06d}.contexts.json'.format(spk=para_info.spk_id,  # pylint: disable=C0209
-                                                                            cha=para_info.chap_id,
-                                                                            para=para_info.para_id,
+        file_name = '{spk}_{cha}_{para:06d}_{utt:06d}.contexts.json'.format(spk=utterance.spk_id,  # pylint: disable=C0209
+                                                                            cha=utterance.chap_id,
+                                                                            para=utterance.para_id,
                                                                             utt=utterance.utt_id)
 
         utterance_contexts_path = os.path.join(self._contexts_path,
-                                               str(para_info.spk_id),
-                                               str(para_info.chap_id),
-                                               str(para_info.para_id),
+                                               str(utterance.spk_id),
+                                               str(utterance.chap_id),
+                                               str(utterance.para_id),
                                                file_name)
 
         return utterance_contexts_path

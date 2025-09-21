@@ -37,6 +37,9 @@ class UtteranceInfo:
     """Contains information about an utterance."""
 
     utt_id: int
+    para_id: int
+    chap_id: int
+    spk_id: int
     text_path: str
     wav_path: str
 
@@ -151,6 +154,9 @@ class RawLibriDirHandler:
                 base_name = f'{spk_id}_{chapter_id}_{para_id:06d}_{utt_id:06d}'
 
                 utt_info = UtteranceInfo(utt_id=utt_id,
+                                         para_id=para_id,
+                                         chap_id=chapter_id,
+                                         spk_id=spk_id,
                                          text_path=os.path.join(
                                              chapter_path,
                                              base_name + '.normalized.txt'),
@@ -160,7 +166,7 @@ class RawLibriDirHandler:
 
                 if any(not os.path.exists(p) for p in (utt_info.text_path, utt_info.wav_path)):
                     _logger().debug('Skipping utterance with missing files: %s.',
-                                      utt_info)
+                                    utt_info)
                     continue
 
                 utterances.append(utt_info)
@@ -197,7 +203,7 @@ class RawLibriDirHandler:
 
         sought_id_prefix = f'{para_info.spk_id}_{para_info.chap_id}_{para_info.para_id:06d}'
 
-        context_sentences: Dict[int ,str] = {}
+        context_sentences: Dict[int, str] = {}
 
         with open(books_file_path, 'r', encoding='utf-8') as f:
 
