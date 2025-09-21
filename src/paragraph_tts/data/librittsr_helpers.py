@@ -1,13 +1,14 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for accessing and transforming LibriTTS-R dataset."""
-
-from typing import Dict, List, Tuple
-import pathlib
-import os
 import csv
 import dataclasses
-import logging
-import sys
 import itertools
+import logging
+import os
+import pathlib
+import sys
+from typing import Dict
+from typing import Tuple
 
 _THIS_MODULE_DIR = pathlib.Path(__file__).parent
 _BOOKS_PATH = os.path.join(_THIS_MODULE_DIR, 'res', 'books.csv')

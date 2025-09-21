@@ -1,3 +1,4 @@
+---
 model_name: mistral:7b
 ollama_host: http://localhost:11434
 raw_ds_path: tmp/LibriTTS_R

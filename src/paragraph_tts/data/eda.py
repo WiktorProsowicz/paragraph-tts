@@ -1,19 +1,26 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for performing Exploratory Data Analysis of LibriTTS-R DS."""
-from typing import Dict, Any, Iterator, List, TypeAlias
 import itertools
 import random
+from typing import Any
+from typing import Dict
+from typing import Iterator
+from typing import List
+from typing import TypeAlias
 
-import numpy as np
 import matplotlib.pyplot as plt  # type: ignore
+import numpy as np
 
 from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data import preprocessing
 from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path.raw_libri_dir_handler import ParagraphInfo
+from paragraph_tts.utils.path.raw_libri_dir_handler import UtteranceInfo
 
 _FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 
 
-def is_paragraph_valid(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
+def is_paragraph_valid(para_info: ParagraphInfo) -> bool:
     """Returns True if the paragraph is valid."""
     return para_info.is_complete and len(para_info.utterances) >= 3
 
@@ -73,7 +80,7 @@ class FeaturesExtractor:
         )
         self._text_processor = preprocessing.text.TextProcessor()
 
-    def paragraph_as_lines(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> List[str]:
+    def paragraph_as_lines(self, para_info: ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
 
         lines = []
@@ -85,7 +92,7 @@ class FeaturesExtractor:
 
         return lines
 
-    def paragraph_as_waveform(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> np.ndarray:
+    def paragraph_as_waveform(self, para_info: ParagraphInfo) -> np.ndarray:
         """Returns the paragraph as a concatenated waveform."""
 
         waveforms = []
@@ -99,7 +106,7 @@ class FeaturesExtractor:
     def get_speakers_stats(self) -> Dict[str, Any]:
         """Returns stats related to speakers."""
 
-        speakers_stats = {}
+        speakers_stats: Dict[str, Any] = {}
 
         speakers_stats['num_speakers'] = self._raw_path_handler.num_speakers
 
@@ -122,7 +129,7 @@ class FeaturesExtractor:
     def get_chapters_stats(self) -> Dict[str, Any]:
         """Returns stats related to chapters."""
 
-        chapters_stats = {}
+        chapters_stats: Dict[str, Any] = {}
 
         chapters_stats['num_chapters'] = len(list(self._raw_path_handler.iter_chapters()))
 
@@ -152,7 +159,7 @@ class FeaturesExtractor:
     def get_paragraphs_stats(self) -> Dict[str, Any]:
         """Returns stats related to paragraphs."""
 
-        paragraphs_stats = {}
+        paragraphs_stats: Dict[str, Any] = {}
 
         n_utterances_in_paragraph = []
         n_utterances_in_valid_paragraph = []
@@ -202,7 +209,7 @@ class FeaturesExtractor:
     def get_utterances_stats(self) -> Dict[str, Any]:
         """Returns stats related to utterances."""
 
-        utterances_stats = {}
+        utterances_stats: Dict[str, Any] = {}
 
         stats_per_utterance = self._get_stats_per_utterance()
 
@@ -305,7 +312,7 @@ class FeaturesExtractor:
 
         return figures
 
-    def get_example_paragraphs(self) -> Dict[str, Iterator[raw_libri_dir_handler.ParagraphInfo]]:
+    def get_example_paragraphs(self) -> Dict[str, Iterator[ParagraphInfo]]:
         """Returns example paragraphs from the dataset.
 
         The paragraphs are selected from the following groups:
@@ -314,7 +321,7 @@ class FeaturesExtractor:
             - Paragraphs containing at least one non-whole sentence utterance
         """
 
-        def contains_non_whole_sentence(para_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
+        def contains_non_whole_sentence(para_info: ParagraphInfo) -> bool:
             for utt in para_info.utterances:
                 text = self._text_processor.load_text(utt.text_path)
                 text = self._text_processor.clean_text(text)
@@ -338,7 +345,8 @@ class FeaturesExtractor:
                                                                    20)
         }
 
-    def get_outlier_utterances(self) -> Dict[str, Iterator[raw_libri_dir_handler.UtteranceInfo]]:
+    def get_outlier_utterances(self) -> Dict[str, Dict[str,
+                                                       Iterator[UtteranceInfo]]]:
         """Returns outlier utterances from the dataset.
 
         Outliers are either extremely short or extremely long utterances.
@@ -395,7 +403,7 @@ class FeaturesExtractor:
     def _get_stats_per_speaker(self) -> Dict[str, Any]:
         """Returns stats related to utterances per speaker."""
 
-        stats = {
+        stats: Dict[str, Any] = {
             'num_utt': [],
             'total_dur': [],
             'num_paragraphs': []
@@ -426,7 +434,7 @@ class FeaturesExtractor:
     def _get_stats_per_utterance(self) -> Dict[str, Any]:
         """Returns stats related to utterances."""
 
-        stats = {
+        stats: Dict[str, Any] = {
             'word_counts': [],
             'lengths_sec': [],
             'has_single_punctuations': [],

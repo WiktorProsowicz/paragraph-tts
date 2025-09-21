@@ -1,11 +1,12 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for context enrichment."""
-
-from typing import List, Dict, Optional
-import logging
-import sys
-import random
 import dataclasses
 import json
+import logging
+import random
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import ollama
 

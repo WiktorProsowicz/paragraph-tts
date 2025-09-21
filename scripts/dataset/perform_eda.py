@@ -1,17 +1,19 @@
+# -*- coding: utf-8 -*-
 """Runs Exploratory Data Analysis on raw LibriTTS-R dataset."""
-
-import os
-import logging
 import datetime
-import yaml  # type: ignore
 import json
+import logging
+import os
 
-import soundfile
 import hydra
 import omegaconf
-from paragraph_tts import (data, utils)
-from paragraph_tts.data.preprocessing import text as text_prep
+import soundfile
+import yaml  # type: ignore
+
+from paragraph_tts import data
+from paragraph_tts import utils
 from paragraph_tts.data import librittsr_helpers
+from paragraph_tts.data.preprocessing import text as text_prep
 
 RESULTS_DESC = """
 Generated at {time}.
@@ -29,8 +31,10 @@ Notes:
       (begin, middle, end).
 """
 
+
 def _logger():
     return logging.getLogger(__name__)
+
 
 def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
@@ -45,7 +49,7 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
         os.makedirs(examples_dir, exist_ok=True)
 
         for para_idx, para_info in enumerate(paragraphs):
-            
+
             speaker, book = libri_metadata.get_speaker_and_book(para_info.spk_id, para_info.chap_id)
 
             para_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.txt')
@@ -105,7 +109,7 @@ def main(script_cfg: omegaconf.DictConfig):
 
     if not os.path.exists(script_cfg.raw_ds_path):
         _logger().critical('Cannot load raw dataset from a non-existing path: %s',
-                         script_cfg.raw_ds_path)
+                           script_cfg.raw_ds_path)
 
     os.makedirs(script_cfg.output_dir, exist_ok=True)
 
@@ -125,7 +129,8 @@ def main(script_cfg: omegaconf.DictConfig):
     _logger().info('Collecting utterances stats...')
     overall_stats['utterances_stats'] = feature_extractor.get_utterances_stats()
 
-    with open(os.path.join(script_cfg.output_dir, 'overall_stats.yaml'), 'w', encoding='utf-8') as stats_f:
+    overall_stats_path = os.path.join(script_cfg.output_dir, 'overall_stats.yaml')
+    with open(overall_stats_path, 'w', encoding='utf-8') as stats_f:
         yaml.dump(overall_stats, stats_f)
 
     _logger().info('Saving figures...')

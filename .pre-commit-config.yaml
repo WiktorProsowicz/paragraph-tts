@@ -52,6 +52,8 @@ repos:
           - --disable=too-few-public-methods
           - --disable=too-many-instance-attributes
           - --disable=too-many-arguments
+          - --disable=too-many-positional-arguments
+          - --disable=too-many-locals
           - --disable=R0801
 
   # Checks whether the python import statements are properly sorted.

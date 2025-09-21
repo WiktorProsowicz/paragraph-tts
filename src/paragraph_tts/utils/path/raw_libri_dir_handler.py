@@ -1,12 +1,16 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in raw LibriTTS-R dataset."""
-
-from typing import Iterator, Dict, Set, Optional, List
+import csv
 import dataclasses
+import logging
 import os
 import re
-import logging
 import sys
-import csv
+from typing import Dict
+from typing import Iterator
+from typing import List
+from typing import Optional
+from typing import Set
 
 
 def _logger():
@@ -54,10 +58,11 @@ class ParagraphInfo:
     is_complete: bool
     utterances: list[UtteranceInfo]
 
+
 @dataclasses.dataclass
 class OriginalParagraph:
     """Contains all original sentences in a paragraph.
-    
+
     The sentences are not necessarily present in the dataset as wav samples.
     """
 
@@ -65,6 +70,7 @@ class OriginalParagraph:
     chap_id: int
     para_id: int
     sentences: Dict[int, str]
+
 
 class RawLibriDirHandler:
     """Manages access to contents of raw LibriTTS-R dataset."""

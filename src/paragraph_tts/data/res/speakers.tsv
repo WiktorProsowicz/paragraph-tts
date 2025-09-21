@@ -31,7 +31,7 @@ READER	GENDER	SUBSET NAME
 56	F	train-clean-360	Kirsten Ferreri
 57	F	train-other-500	Ophelia Darcy
 58	M	train-other-500	George Coutts
-60	M	train-clean-100	
+60	M	train-clean-100
 61	M	test-clean	Paul-Gabriel Wiener
 62	M	train-other-500	Faris
 64	F	train-clean-360	Robin Cotter

@@ -19,4 +19,3 @@ RUN apt update \
 RUN wget -qO- https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 
 USER devcontainer
-

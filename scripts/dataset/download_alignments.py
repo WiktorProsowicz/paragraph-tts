@@ -1,13 +1,13 @@
+# -*- coding: utf-8 -*-
 """Downloads prepared alignments for LibriTTS-R dataset."""
-
 import json
+import logging
 import os
 import subprocess
-import logging
 
+import gdown
 import hydra
 import omegaconf
-import gdown
 
 from paragraph_tts.utils import logging_utils
 
@@ -37,7 +37,6 @@ def main(script_cfg: omegaconf.DictConfig):
 
     arch_path = os.path.join('/tmp/librittsr_alignments.tar.bz2')
     gdown.download(ALIGNMENTS_URL, arch_path, quiet=False)
-
 
     try:
         subprocess.run(['bzip2', '-d', arch_path], check=True)

@@ -1,3 +1,5 @@
-from . import processor
-from . import preprocessing
+# -*- coding: utf-8 -*-
+"""Contains modules for handling datasets."""
 from . import eda
+from . import preprocessing
+from . import processor

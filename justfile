@@ -29,3 +29,10 @@ build_project_dev:
     source .venv/bin/activate
     export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
     pip install -e .[dev]
+
+# Run pre-commit hooks on all files.
+run_pre_commit:
+    #!/usr/bin/env bash
+    echo "Running pre-commit hooks..."
+    source .venv/bin/activate
+    pre-commit run --all-files

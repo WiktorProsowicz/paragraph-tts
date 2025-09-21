@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Contains definition of custom logging tools based on logging lib."""
+import datetime
 import logging.config
 import os
 import pathlib
 from typing import Any
 from typing import Dict
-import datetime
 
 import yaml  # type: ignore
 

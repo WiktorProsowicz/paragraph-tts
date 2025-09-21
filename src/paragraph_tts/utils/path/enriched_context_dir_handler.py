@@ -1,11 +1,11 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in generated enriched context for LibriTTS-R dataset."""
-
-import os
-from typing import List
+import dataclasses
 import json
 import logging
+import os
 import sys
-import dataclasses
+from typing import List
 
 from paragraph_tts.utils.path import raw_libri_dir_handler
 

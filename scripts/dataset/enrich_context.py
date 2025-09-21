@@ -1,22 +1,22 @@
+# -*- coding: utf-8 -*-
 """Generates enriched context for dataset samples using a language model."""
-
-import json
-import os
-import logging
-import sys
-import random
 import itertools
+import json
+import logging
+import os
+import random
+import sys
 
-import tqdm
 import hydra
 import omegaconf
+import tqdm
 
 from paragraph_tts.data import enrichment
-from paragraph_tts.utils.path import (
-    raw_libri_dir_handler, enriched_context_dir_handler)
-from paragraph_tts.utils import logging_utils
 from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data.preprocessing import text as text_prep
+from paragraph_tts.utils import logging_utils
+from paragraph_tts.utils.path import enriched_context_dir_handler
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger():
@@ -64,7 +64,7 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
     original_paragraph = raw_path_handler.get_original_paragraph(para_info)
 
     utterances_to_enrich = [utt_info for utt_info in para_info.utterances
-                            if not contexts_dir_handler.contains_contexts_for(para_info, utt_info)]
+                            if not contexts_dir_handler.contains_contexts_for(utt_info)]
 
     utterances_to_enrich = [utt_info for utt_info in utterances_to_enrich
                             if _should_enrich_utterance(utt_info)]
@@ -85,8 +85,7 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
 
         contexts = [c for c in contexts if c is not None]
 
-        utterance_contexts_path = contexts_dir_handler.path_for_utt_contexts(
-            para_info, utt_info)
+        utterance_contexts_path = contexts_dir_handler.path_for_utt_contexts(utt_info)
         os.makedirs(os.path.dirname(utterance_contexts_path), exist_ok=True)
 
         with open(utterance_contexts_path, 'w', encoding='utf-8') as f:
@@ -106,7 +105,7 @@ def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo):
     return librittsr_helpers.is_sentence_whole(text)
 
 
-@hydra.main(version_base=None, config_path="cfg", config_name="enrich_context")
+@hydra.main(version_base=None, config_path='cfg', config_name='enrich_context')
 def main(script_cfg: omegaconf.DictConfig):
     """Performs context enrichment for dataset samples."""
 

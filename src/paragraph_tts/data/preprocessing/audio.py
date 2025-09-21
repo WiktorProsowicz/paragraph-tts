@@ -1,10 +1,10 @@
+# -*- coding: utf-8 -*-
 """Contains audio processing utilities."""
-
 from typing import Tuple
 
+import comp_trans_tts  # type: ignore
 import librosa
 import numpy as np
-import comp_trans_tts  # type: ignore
 
 
 class AudioProcessor:
@@ -79,7 +79,7 @@ class AudioProcessor:
         )
 
         return wav
-    
+
     def load_wav_raw(self, file_path: str) -> np.ndarray:
         """Loads a waveform from a file without any trimming or padding.
 
