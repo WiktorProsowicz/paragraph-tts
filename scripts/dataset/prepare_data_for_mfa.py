@@ -1,17 +1,29 @@
 """Prepares audio/transcript pairs for MFA alignment."""
 
+import os
+import logging
+import json
+
 import hydra
 import omegaconf
-import os
 import tqdm
 
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.data.preprocessing import text as text_prep
+from paragraph_tts.utils import logging_utils
+
+
+def _logger():
+    return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='prepare_data_for_mfa')
 def main(cfg: omegaconf.DictConfig):
     """Prepares audio/transcript pairs for MFA alignment."""
+
+    logging_utils.setup_logging('prepare_data_for_mfa')
+
+    _logger().info('Config:\n%s', json.dumps(dict(cfg), indent=4))
 
     os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -24,28 +36,34 @@ def main(cfg: omegaconf.DictConfig):
 
     for utt_info in tqdm.tqdm(iter_all_utterances()):
 
-        text = text_prep.TextProcessor.load_text(utt_info.text_path)
-        text = text_prep.TextProcessor.clean_text(text)
-
-        text = text.lower().strip()
-        text = ''.join(filter(lambda x: x in 'abcdefghijklmnopqrstuvwxyz ', text))
+        dst_dir = os.path.join(cfg.output_dir,
+                               str(utt_info.spk_id),
+                               str(utt_info.chap_id))
 
         file_basename = '%d_%d_%06d_%06d' % (utt_info.spk_id,  # pylint: disable=consider-using-f-string
                                              utt_info.chap_id,
                                              utt_info.para_id,
                                              utt_info.utt_id)
 
-        dst_dir = os.path.join(cfg.output_dir,
-                               str(utt_info.spk_id),
-                               str(utt_info.chap_id))
+        output_txt_path = os.path.join(dst_dir, file_basename + '.txt')
+        output_wav_path = os.path.join(dst_dir, file_basename + '.wav')
+
+        if any(os.path.exists(p) for p in (output_txt_path, output_wav_path)):
+            _logger().debug('Skipping already existing utterance: %s', file_basename)
+
+        text = text_prep.TextProcessor.load_text(utt_info.text_path)
+        text = text_prep.TextProcessor.clean_text(text)
+
+        text = text.lower().strip()
+        text = ''.join(filter(lambda x: x in 'abcdefghijklmnopqrstuvwxyz ', text))
 
         os.makedirs(dst_dir, exist_ok=True)
 
-        with open(os.path.join(dst_dir, file_basename + '.txt'), 'w', encoding='utf-8') as f:
+        with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write(text)
 
         os.symlink(os.path.abspath(utt_info.wav_path),
-                   os.path.join(dst_dir, file_basename + '.wav'))
+                   output_wav_path)
 
 
 if __name__ == "__main__":
