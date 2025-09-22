@@ -37,6 +37,7 @@ def main(cfg: omegaconf.DictConfig):
     for utt_info in tqdm.tqdm(iter_all_utterances()):
 
         dst_dir = os.path.join(cfg.output_dir,
+                               raw_ds_handler.get_split_for_speaker(utt_info.spk_id),
                                str(utt_info.spk_id),
                                str(utt_info.chap_id))
 

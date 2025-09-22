@@ -99,6 +99,10 @@ class RawLibriDirHandler:
     def num_speakers(self) -> int:
         """Returns number of speakers in the dataset."""
         return len(self._spk_to_split)
+    
+    def get_split_for_speaker(self, spk_id: int) -> str:
+        """Returns the split (train/dev/test) for a given speaker ID."""
+        return self._spk_to_split[spk_id]
 
     def iter_speakers(self) -> Iterator[int]:
         """Iterates over speaker IDs."""
