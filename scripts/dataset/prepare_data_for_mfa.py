@@ -62,8 +62,13 @@ def main(cfg: omegaconf.DictConfig):
         with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write(text)
 
-        os.symlink(os.path.abspath(utt_info.wav_path),
-                   output_wav_path)
+        if cfg.create_relative_symlinks:
+            os.symlink(os.path.relpath(os.path.abspath(utt_info.wav_path),
+                                       os.path.abspath(dst_dir)),
+                       output_wav_path)
+        else:
+            os.symlink(os.path.abspath(utt_info.wav_path),
+                    output_wav_path)
 
 
 if __name__ == "__main__":

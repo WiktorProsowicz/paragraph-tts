@@ -1,2 +1,3 @@
 raw_dataset_path: tmp/LibriTTS_R
 output_dir: tmp/mfa
+create_relative_symlinks: true
