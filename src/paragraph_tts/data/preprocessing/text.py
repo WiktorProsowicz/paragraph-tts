@@ -145,13 +145,14 @@ class TextProcessor:
         "'"
     )
 
-    def __init__(self):
+    def __init__(self, bert_device: str):
         """Inits the text processor."""
 
         self._pretrained_bert_id = 'microsoft/deberta-v2-xxlarge'
         self._tokenizer = DebertaV2Tokenizer.from_pretrained(self._pretrained_bert_id)
         self._deberta_embedder: Optional[DebertaV2Model] = None
         self._phoneme_to_id = {p: i for i, p in enumerate(self.SUPPORTED_PHONEMES, start=1)}
+        self._bert_device = bert_device
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -223,9 +224,10 @@ class TextProcessor:
         input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
 
         with torch.no_grad():
-            outputs = self._get_embedder()(torch.tensor([input_ids]))
+            model_output = self._get_embedder()(torch.tensor([input_ids]).to(self._bert_device))
+            outputs = model_output.last_hidden_state.cpu()
 
-        return outputs.last_hidden_state[0][1:-1]
+        return outputs[0][1:-1]
 
     def obtain_bert_tokens_for_sentence(self, sentence: str) -> List[str]:
         """Obtains BERT tokens for a given sentence."""
@@ -270,11 +272,13 @@ class TextProcessor:
                           for tokens in input_tokens]
 
         with torch.no_grad():
-            outputs = self._get_embedder()(input_ids=torch.tensor(input_ids),
-                                           token_type_ids=torch.tensor(token_type_ids),
-                                           attention_mask=torch.tensor(attention_mask))
+            model_output = self._get_embedder()(
+                input_ids=torch.tensor(input_ids).to(self._bert_device),
+                token_type_ids=torch.tensor(token_type_ids).to(self._bert_device),
+                attention_mask=torch.tensor(attention_mask).to(self._bert_device))
+            outputs = model_output.last_hidden_state.cpu()
 
-        return [outputs.last_hidden_state[i, 0] for i in range(len(sentences) - 1)]
+        return [outputs[i, 0] for i in range(len(sentences) - 1)]
 
     def obtain_bert_embeddings_for_sentences(self, sentences: List[str]) -> List[torch.Tensor]:
         """Obtains BERT embeddings for each sentence in a list of sentences."""
@@ -291,17 +295,21 @@ class TextProcessor:
                           for tokens in input_tokens]
 
         with torch.no_grad():
-            outputs = self._get_embedder()(input_ids=torch.tensor(input_ids),
-                                           attention_mask=torch.tensor(attention_mask))
+            model_output = self._get_embedder()(
+                input_ids=torch.tensor(input_ids).to(self._bert_device),
+                attention_mask=torch.tensor(attention_mask).to(self._bert_device)
+            )
+            outputs = model_output.last_hidden_state.cpu()
 
-        return [outputs.last_hidden_state[i][1:len(tokenized_sentence) + 1]
+        return [outputs[i][1:len(tokenized_sentence) + 1]
                 for i, tokenized_sentence in enumerate(tokenized_sentences)]
 
     def _get_embedder(self) -> DebertaV2Model:
         """Returns lazy-initialized DeBERTa embedder."""
 
         if not self._deberta_embedder:
-            self._deberta_embedder = DebertaV2Model.from_pretrained(self._pretrained_bert_id)
+            model = DebertaV2Model.from_pretrained(self._pretrained_bert_id)
+            self._deberta_embedder = model.to(self._bert_device)
 
         return self._deberta_embedder
 

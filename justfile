@@ -1,3 +1,4 @@
+set positional-arguments
 
 # Set up virtual environment.
 setup_venv:
@@ -7,12 +8,12 @@ setup_venv:
     echo 'export MPLBACKEND=Agg' >> .venv/bin/activate
 
 # Build and install dependencies from `extern` directory.
-build_external_repos:
+build_external_repos onnxrt="cpu":
     #!/usr/bin/env bash
     echo "Installing dependencies..."
     source .venv/bin/activate
     pip install -e extern/torch-dev-utils
-    pip install -e extern/Comprehensive-Transformer-TTS
+    pip install -e extern/Comprehensive-Transformer-TTS[$1]
 
 # Install project with its deps into the virtual environment.
 build_project:

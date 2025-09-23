@@ -4,3 +4,4 @@ processed_ds_output_path: tmp/librittsr_processed
 alignments_path: tmp/librittsr_alignments
 enriched_contexts_path: tmp/librittsr_enriched_contexts
 prepare_speaker_embeddings: true
+embedders_device: cpu

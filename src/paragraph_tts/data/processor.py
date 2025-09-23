@@ -34,7 +34,8 @@ class LibriTTSRPreprocessor:
             enriched_contexts_path_hand: Optional[EnrichedContextDirHandler],
             alignments_dir_hand: AlignmentsDirHandler,
             output_path: str,
-            multi_speaker: bool):
+            multi_speaker: bool,
+            embedders_device: str):
         """
         Args:
             raw_path_handler: Handler for accessing raw dataset files.
@@ -46,7 +47,7 @@ class LibriTTSRPreprocessor:
 
         self._output_path = output_path
         self._multi_speaker = multi_speaker
-        self._embedder = deepspeaker.embedder.DeepSpeakerEmbedder()
+        self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(embedders_device)
         self._audio_processor = audio_prep.AudioProcessor(
             sr=22050,
             hop_length=256,
@@ -56,7 +57,7 @@ class LibriTTSRPreprocessor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = text_prep.TextProcessor()
+        self._text_processor = text_prep.TextProcessor(embedders_device)
 
     def run_for_speaker(self, speaker_id: int):
         """Runs preprocessing of samples for given speaker."""
@@ -276,7 +277,7 @@ class LibriTTSRPreprocessor:
         for utterance_info in self._raw_path_handler.iter_utterances_for_spk(speaker_id):
             embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
                 utterance_info.wav_path)
-            embeddings.append(self._embedder(embedder_input)[0])
+            embeddings.append(self._spk_embedder(embedder_input)[0])
 
         final_embedding = np.mean(embeddings, axis=0)
 

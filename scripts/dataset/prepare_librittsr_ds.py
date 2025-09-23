@@ -45,7 +45,8 @@ def main(script_cfg: omegaconf.DictConfig):
                                                         enriched_contexts_path_hand,
                                                         alignments_path_hand,
                                                         script_cfg.processed_ds_output_path,
-                                                        script_cfg.prepare_speaker_embeddings)
+                                                        script_cfg.prepare_speaker_embeddings,
+                                                        script_cfg.embedders_device)
 
     all_speakers = list(raw_ds_path_hand.iter_speakers())
 
