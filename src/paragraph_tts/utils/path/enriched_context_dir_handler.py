@@ -8,6 +8,7 @@ import sys
 from typing import List
 
 from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.data.preprocessing import text as text_prep
 
 
 def _logger():
@@ -20,6 +21,14 @@ class ContextForUtterance:
 
     preceding_sentences: List[str]
     following_sentences: List[str]
+    utterance: raw_libri_dir_handler.UtteranceInfo
+
+    def as_paragraph(self) -> List[str]:
+        """Returns context as a single paragraph string."""
+
+        return (self.preceding_sentences +
+                [text_prep.TextProcessor.load_text(self.utterance.text_path)] +
+                self.following_sentences)
 
 
 class EnrichedContextDirHandler:
@@ -65,7 +74,8 @@ class EnrichedContextDirHandler:
         return [
             ContextForUtterance(
                 preceding_sentences=c['preceding_sentences'],
-                following_sentences=c['following_sentences']
+                following_sentences=c['following_sentences'],
+                utterance=utterance
             ) for c in contexts_json
         ]
 
