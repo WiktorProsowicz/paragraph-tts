@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import tqdm  # type: ignore
 from comp_trans_tts import (deepspeaker)  # type: ignore
+from sklearn.preprocessing import StandardScaler
 
 from paragraph_tts import data
 from paragraph_tts.utils.path import raw_libri_dir_handler
@@ -73,6 +74,8 @@ class LibriTTSRPreprocessor:
                                 speaker_id)
 
                 self._process_paragraph(para_info)
+
+        self._normalize_contours_for_speaker(speaker_id)
 
     def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo):
 
@@ -187,6 +190,46 @@ class LibriTTSRPreprocessor:
             'phone_to_spec_indices': torch.tensor(phone_to_spec_indices, dtype=torch.long),
             'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float)
         }
+
+    def _normalize_contours_for_speaker(self, spk_id: int):
+
+        speaker_path = os.path.join(self._output_path,
+                                    'samples',
+                                    str(spk_id))
+
+        self._normalize_contours(speaker_path, 'f0')
+        self._normalize_contours(speaker_path, 'energy')
+
+    def _normalize_contours(self,
+                            speaker_path: str,
+                            contour_file_name: str):
+
+        scaler = StandardScaler()
+
+        for para_dir in os.listdir(speaker_path):
+            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir)):
+
+                contour_path = os.path.join(speaker_path,
+                                            para_dir,
+                                            utt_dir,
+                                            'input_data',
+                                            f'{contour_file_name}.pt')
+
+                contour = torch.load(contour_path).numpy().reshape(-1, 1)
+                scaler.partial_fit(contour)
+
+        for para_dir in os.listdir(speaker_path):
+            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir)):
+
+                contour_path = os.path.join(speaker_path,
+                                            para_dir,
+                                            utt_dir,
+                                            'input_data',
+                                            f'{contour_file_name}.pt')
+
+            contour = torch.load(contour_path).numpy().reshape(-1, 1)
+            normalized_contour = scaler.transform(contour).squeeze()
+            torch.save(torch.tensor(normalized_contour, dtype=torch.float), contour_path)
 
     def _prepare_context_embeddings(self,
                                     context_sentences: List[str],
