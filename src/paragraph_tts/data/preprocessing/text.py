@@ -222,8 +222,10 @@ class TextProcessor:
         input_tokens = ['[CLS]'] + bert_tokens + ['[SEP]']
         input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
 
-        outputs=  self._get_embedder()(torch.tensor([input_ids]))
-        return outputs[0][1:-1]
+        with torch.no_grad():
+            outputs = self._get_embedder()(torch.tensor([input_ids]))
+
+        return outputs.last_hidden_state[0][1:-1]
 
     def obtain_bert_tokens_for_sentence(self, sentence: str) -> List[str]:
         """Obtains BERT tokens for a given sentence."""
@@ -241,19 +243,59 @@ class TextProcessor:
             _logger().critical('Unsupported phoneme found in the text: %s', phonemes)
             sys.exit(1)
 
-    def obtain_paired_bert_embedding(self, sentence1: str, sentence2: str) -> torch.Tensor:
-        """Obtains chunked BERT embedding for a list of sentences.
+    def obtain_paired_bert_embeddings(self, sentences: List[str]) -> List[torch.Tensor]:
+        """Obtains paired BERT embedding for a list of sentences.
 
         Paired embedding is the output hidden state corresponding to the [CLS] token
         for two sentences passed as input.
         """
 
-        tokens1 = self._tokenizer.tokenize(sentence1)
-        tokens2 = self._tokenizer.tokenize(sentence2)
+        tokenized_sentences = [self._tokenizer.tokenize(sentence) for sentence in sentences]
 
-        input_tokens = ['[CLS]'] + tokens1 + ['[SEP]'] + tokens2 + ['[SEP]']
-        input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
-        token_type_ids = [0] + [0] * (len(tokens1) + 1) + [1] * (len(tokens2) + 1)
+        input_tokens = [['[CLS]'] + prev_tokens + ['[SEP]'] + next_tokens + ['[SEP]']
+                        for prev_tokens, next_tokens
+                        in zip(tokenized_sentences, tokenized_sentences[1:])]
+
+        max_length = max(len(tokens) for tokens in input_tokens)
+
+        input_ids = [self._tokenizer.convert_tokens_to_ids(tokens) for tokens in input_tokens]
+        input_ids = [ids + [0] * (max_length - len(ids)) for ids in input_ids]
+
+        token_type_ids = [[0] + [0] * (len(prev_tokens) + 1) + [1] * (len(next_tokens) + 1)
+                          for prev_tokens, next_tokens
+                          in zip(tokenized_sentences, tokenized_sentences[1:])]
+        token_type_ids = [ids + [0] * (max_length - len(ids)) for ids in token_type_ids]
+
+        attention_mask = [[1] * len(tokens) + [0] * (max_length - len(tokens))
+                          for tokens in input_tokens]
+
+        with torch.no_grad():
+            outputs = self._get_embedder()(input_ids=torch.tensor(input_ids),
+                                           token_type_ids=torch.tensor(token_type_ids),
+                                           attention_mask=torch.tensor(attention_mask))
+
+        return [outputs.last_hidden_state[i, 0] for i in range(len(sentences) - 1)]
+
+    def obtain_bert_embeddings_for_sentences(self, sentences: List[str]) -> List[torch.Tensor]:
+        """Obtains BERT embeddings for each sentence in a list of sentences."""
+
+        tokenized_sentences = [self._tokenizer.tokenize(sentence) for sentence in sentences]
+
+        input_tokens = [['[CLS]'] + tokens + ['[SEP]'] for tokens in tokenized_sentences]
+        max_length = max(len(tokens) for tokens in input_tokens)
+
+        input_ids = [self._tokenizer.convert_tokens_to_ids(tokens) for tokens in input_tokens]
+        input_ids = [ids + [0] * (max_length - len(ids)) for ids in input_ids]
+
+        attention_mask = [[1] * len(tokens) + [0] * (max_length - len(tokens))
+                          for tokens in input_tokens]
+
+        with torch.no_grad():
+            outputs = self._get_embedder()(input_ids=torch.tensor(input_ids),
+                                           attention_mask=torch.tensor(attention_mask))
+
+        return [outputs.last_hidden_state[i][1:len(tokenized_sentence) + 1]
+                for i, tokenized_sentence in enumerate(tokenized_sentences)]
 
     def _get_embedder(self) -> DebertaV2Model:
         """Returns lazy-initialized DeBERTa embedder."""

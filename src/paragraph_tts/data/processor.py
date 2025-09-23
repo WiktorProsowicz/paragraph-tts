@@ -91,26 +91,33 @@ class LibriTTSRPreprocessor:
 
         for utt_info in para_info.utterances:
 
-            if not self._alignments_path_hand.has_alignment_for(utt_info):
-                _logger().debug('No alignment found for utterance %s, skipping.',
-                                utt_info)
-                continue
+            self._process_utterance(utt_info, dst_dir, context_embeddings_dir)
 
-            inputs_path = os.path.join(dst_dir, 'input_data', str(utt_info.utt_id))
-            if os.path.exists(inputs_path):
-                _logger().debug('Input data for utterance %s already exists, skipping.',
-                                utt_info)
-                continue
+    def _process_utterance(self,
+                           utt_info: raw_libri_dir_handler.UtteranceInfo,
+                           dst_dir: str,
+                           context_embeddings_dir: str):
 
-            inputs = self._obtain_input_for_utterance(utt_info)
+        if not self._alignments_path_hand.has_alignment_for(utt_info):
+            _logger().debug('No alignment found for utterance %s, skipping.',
+                            utt_info)
+            return
 
-            if not inputs:
-                continue
+        inputs_path = os.path.join(dst_dir, 'input_data', str(utt_info.utt_id))
+        if os.path.exists(inputs_path):
+            _logger().debug('Input data for utterance %s already exists, skipping.',
+                            utt_info)
+            return
 
-            os.makedirs(inputs_path)
+        inputs = self._obtain_input_for_utterance(utt_info)
 
-            for file_name, tensor in inputs.items():
-                torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
+        if not inputs:
+            return
+
+        os.makedirs(inputs_path)
+
+        for file_name, tensor in inputs.items():
+            torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
 
             if self._enriched_contexts_path_hand:
 
@@ -127,8 +134,8 @@ class LibriTTSRPreprocessor:
                     )
 
     def _obtain_input_for_utterance(self,
-                                     utt_info: raw_libri_dir_handler.UtteranceInfo
-                                     ) -> Optional[Dict[str, torch.Tensor]]:
+                                    utt_info: raw_libri_dir_handler.UtteranceInfo
+                                    ) -> Optional[Dict[str, torch.Tensor]]:
 
         text = self._text_processor.load_text(utt_info.text_path)
         text_features = self._text_processor.tokenize_text(text)
@@ -190,28 +197,24 @@ class LibriTTSRPreprocessor:
                             context_sentences)
             return
 
-        single_embeddings: List[torch.Tensor] = []
+        single_embeddings = self._text_processor.obtain_bert_embeddings_for_sentences(
+            context_sentences
+        )
 
-        for sentence in context_sentences:
-            text = self._text_processor.clean_text(sentence)
-            tokens = self._text_processor.obtain_bert_tokens_for_sentence(text)
-            embeddings = self._text_processor.obtain_bert_embeddings(tokens)
-            single_embeddings.append(embeddings)
+        if len(context_sentences) > 1:
+            paired_embeddings = self._text_processor.obtain_paired_bert_embeddings(
+                context_sentences
+            )
 
-        paired_embeddings: List[torch.Tensor] = []
-
-        for sentence_prev, sentence_next in zip(context_sentences, context_sentences[1:]):
-            text1 = self._text_processor.clean_text(sentence_prev)
-            text2 = self._text_processor.clean_text(sentence_next)
-            paired_embedding = self._text_processor.obtain_paired_bert_embedding(text1, text2)
-            paired_embeddings.append(paired_embedding)
+        else:
+            paired_embeddings = []
 
         os.makedirs(output_dir)
 
-        torch.save(torch.stack(single_embeddings),
+        torch.save(single_embeddings,
                    os.path.join(output_dir, 'single_embeddings.pt'))
 
-        torch.save(torch.stack(paired_embeddings),
+        torch.save(paired_embeddings,
                    os.path.join(output_dir, 'paired_embeddings.pt'))
 
     def _prepare_spk_embedding(self, speaker_id: int):
