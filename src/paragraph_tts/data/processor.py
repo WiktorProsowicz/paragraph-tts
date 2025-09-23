@@ -208,24 +208,22 @@ class LibriTTSRPreprocessor:
         scaler = StandardScaler()
 
         for para_dir in os.listdir(speaker_path):
-            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir)):
+            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir, 'input_data')):
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
                                             utt_dir,
-                                            'input_data',
                                             f'{contour_file_name}.pt')
 
                 contour = torch.load(contour_path).numpy().reshape(-1, 1)
                 scaler.partial_fit(contour)
 
         for para_dir in os.listdir(speaker_path):
-            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir)):
+            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir, 'input_data')):
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
                                             utt_dir,
-                                            'input_data',
                                             f'{contour_file_name}.pt')
 
             contour = torch.load(contour_path).numpy().reshape(-1, 1)
