@@ -122,6 +122,17 @@ class TextProcessor:
         "'\"": '""',
     }
 
+    _GRUUT_PHONEMES = ('oʊ', 'ˌaɪ', 'ˌɑ', 'ˈɑ', 'ˌoʊ', 'p', 'f', 'ˌɛ', 'u', 'eɪ', 'ɡ', 'ɚ',
+                       't͡ʃ', 'ˌɔɪ', 'ʃ', 'ˈeɪ', 'ˈɔɪ', 'ð', 'w', 's', 'θ', 'ɪ', 'ˌɪ', 'ŋ', 'ʒ',
+                       't', 'ˌaʊ', 'ˌu', 'ɛ', 'ˈɚ', 'ˌɔ', 'ɔɪ', 'ɑ', 'ˈi', 'h', 'ɹ', 'ˈɪ', 'j',
+                       'ˌʊ', 'm', 'ɔ', 'ˈoʊ', 'æ', 'z', 'i', 'ˌeɪ', 'ˈʊ', 'ˌʌ', 'ˌɚ', 'ˈaʊ', 'b',
+                       'd', 'v', 'd͡ʒ', 'ʌ', 'ˈu', 'ˌi', 'l', 'aɪ', 'aʊ', 'ə', 'ˈɔ',
+                       'ˈɛ', 'n', 'ˈæ', 'ˌæ', 'ˈaɪ', 'k', 'ʊ', 'ˈʌ')
+
+    _PHONEME_PAUSE_TOKENS = ('<short_pause>', '<medium_pause>', '<long_pause>')
+
+    SUPPORTED_PHONEMES = _GRUUT_PHONEMES + _PHONEME_PAUSE_TOKENS
+
     allowed_chars = (
         'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         'abcdefghijklmnopqrstuvwxyz'
@@ -137,8 +148,11 @@ class TextProcessor:
     def __init__(self):
         """Inits the text processor."""
 
-        vocab_path, vocab_type = deberta.load_vocab(pretrained_id='xxlarge-v2')
+        self._pretrained_bert_id = 'xxlarge-v2'
+        vocab_path, vocab_type = deberta.load_vocab(pretrained_id=self._pretrained_bert_id)
         self._tokenizer = deberta.tokenizers[vocab_type](vocab_path)
+        self._deberta_embedder: Optional[deberta.DeBERTa] = None
+        self._phoneme_to_id = {p: i for i, p in enumerate(self.SUPPORTED_PHONEMES, start=1)}
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -200,10 +214,58 @@ class TextProcessor:
         return TextFeatures(
             normalized_text=normalized_text,
             words=words,
-            phonemes=phonemes,
-            bert_tokens=bert_tokens,
-            word_to_phoneme_spans=word_to_phoneme_spans,
-            word_to_token_spans=word_to_token_spans)
+            word_phoneme_mapping=word_phoneme_mapping,
+            word_bert_mapping=word_bert_mapping)
+
+    def obtain_bert_embeddings(self, bert_tokens: List[str]) -> torch.Tensor:
+        """Obtains BERT embeddings for the given BERT tokens."""
+
+        input_tokens = ['[CLS]'] + bert_tokens + ['[SEP]']
+        input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
+
+        outputs=  self._get_embedder()(torch.tensor([input_ids]))
+        return outputs[0][1:-1]
+
+    def obtain_bert_tokens_for_sentence(self, sentence: str) -> List[str]:
+        """Obtains BERT tokens for a given sentence."""
+
+        sentence = self._prepare_for_tokenization(sentence)
+        return self._tokenizer.tokenize(sentence)
+
+    def obtain_phoneme_ids(self, phonemes: List[str]) -> List[int]:
+        """Converts phonemes to their corresponding IDs."""
+
+        try:
+            return [self._phoneme_to_id[p] for p in phonemes]
+
+        except KeyError:
+            _logger().critical('Unsupported phoneme found in the text: %s', phonemes)
+            sys.exit(1)
+
+    def obtain_paired_bert_embedding(self, sentence1: str, sentence2: str) -> torch.Tensor:
+        """Obtains chunked BERT embedding for a list of sentences.
+
+        Paired embedding is the output hidden state corresponding to the [CLS] token
+        for two sentences passed as input.
+        """
+
+        tokens1 = self._tokenizer.tokenize(sentence1)
+        tokens2 = self._tokenizer.tokenize(sentence2)
+
+        input_tokens = ['[CLS]'] + tokens1 + ['[SEP]'] + tokens2 + ['[SEP]']
+        input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
+        token_type_ids = [0] + [0] * (len(tokens1) + 1) + [1] * (len(tokens2) + 1)
+
+        return self._get_embedder()(input_ids=torch.tensor([input_ids]),
+                              token_type_ids=torch.tensor([token_type_ids]))[0][0]
+
+    def _get_embedder(self) -> deberta.DeBERTa:
+        """Returns lazy-initialized DeBERTa embedder."""
+
+        if not self._deberta_embedder:
+            self._deberta_embedder = deberta.DeBERTa(pre_trained=self._pretrained_bert_id)
+
+        return self._deberta_embedder
 
     def _prepare_for_tokenization(self, text: str) -> str:
         """Cleans the text and prepares it for tokenization."""
