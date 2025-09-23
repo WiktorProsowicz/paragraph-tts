@@ -1,5 +1,6 @@
 ---
 raw_ds_path: tmp/LibriTTS_R
 processed_ds_output_path: tmp/librittsr_processed
-lexicon_path: extern/Comprehensive-Transformer-TTS-lexicon/librispeech-lexicon.txt
-multi_speaker: true
+alignments_path: tmp/librittsr_alignments
+enriched_contexts_path: tmp/librittsr_enriched_contexts
+prepare_speaker_embeddings: true
