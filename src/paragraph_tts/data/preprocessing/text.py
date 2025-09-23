@@ -21,7 +21,7 @@ def _logger():
     return logging.getLogger(__name__)
 
 
-TokenMapping: TypeAlias = collections.OrderedDict[str, List[str]]
+TokenMapping: TypeAlias = List[Tuple[str, List[str]]]
 
 
 @dataclasses.dataclass
@@ -36,22 +36,22 @@ class TextFeatures:
     def get_phoneme_sequence(self) -> List[str]:
         """Returns the full phoneme sequence for the text."""
 
-        return list(itertools.chain(*self.word_phoneme_mapping.values()))
+        return list(itertools.chain(*[phonemes for _, phonemes in self.word_phoneme_mapping]))
 
     def get_bert_token_sequence(self) -> List[str]:
         """Returns the full BERT token sequence for the text."""
 
-        return list(itertools.chain(*self.word_bert_mapping.values()))
+        return list(itertools.chain(*[tokens for _, tokens in self.word_bert_mapping]))
 
     def get_word_to_phoneme_spans(self) -> np.ndarray:
         """Returns spans mapping words to phonemes."""
 
-        return np.ndarray([len(phonemes) for phonemes in self.word_phoneme_mapping.values()])
+        return np.array([len(phonemes) for _, phonemes in self.word_phoneme_mapping])
 
     def get_word_to_token_spans(self) -> np.ndarray:
         """Returns spans mapping words to BERT tokens."""
 
-        return np.ndarray([len(tokens) for tokens in self.word_bert_mapping.values()])
+        return np.array([len(tokens) for _, tokens in self.word_bert_mapping])
 
 
 def add_pauses(text_features: TextFeatures, pauses: List[Tuple[int, str]]):
@@ -63,7 +63,7 @@ def add_pauses(text_features: TextFeatures, pauses: List[Tuple[int, str]]):
     """
 
     for word_idx, pause_type in reversed(pauses):
-        text_features.word_phoneme_mapping[text_features.words[word_idx]].append(pause_type)
+        text_features.word_phoneme_mapping[word_idx][1].append(pause_type)
 
 
 @dataclasses.dataclass
@@ -131,7 +131,7 @@ class TextProcessor:
 
     _PHONEME_PAUSE_TOKENS = ('<short_pause>', '<medium_pause>', '<long_pause>')
 
-    SUPPORTED_PHONEMES = _GRUUT_PHONEMES + _PHONEME_PAUSE_TOKENS
+    SUPPORTED_PHONEMES = _PHONEME_PAUSE_TOKENS + _GRUUT_PHONEMES
 
     allowed_chars = (
         'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -200,15 +200,15 @@ class TextProcessor:
         word_structs = self._get_word_structs(normalized_text)
 
         words = []
-        word_phoneme_mapping: TokenMapping = collections.OrderedDict()
-        word_bert_mapping: TokenMapping = collections.OrderedDict()
+        word_phoneme_mapping: TokenMapping = []
+        word_bert_mapping: TokenMapping = []
 
         for word_struct in word_structs:
             words.append(word_struct.text)
-            word_phoneme_mapping[word_struct.text] = word_struct.phonemes
+            word_phoneme_mapping.append((word_struct.text, word_struct.phonemes))
 
             tokens = self._tokenizer.tokenize(word_struct.text_with_punct)
-            word_bert_mapping[word_struct.text] = tokens
+            word_bert_mapping.append((word_struct.text, tokens))
 
         return TextFeatures(
             normalized_text=normalized_text,

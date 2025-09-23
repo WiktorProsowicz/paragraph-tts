@@ -76,7 +76,7 @@ def _stretch_words_to_breaks(word_intervals: List[tgt.Interval]) -> List[tgt.Int
     return new_words
 
 
-WordPhonemeMapping: TypeAlias = collections.OrderedDict[tgt.Interval, List[tgt.Interval]]
+WordPhonemeMapping: TypeAlias = List[Tuple[tgt.Interval, List[tgt.Interval]]]
 
 
 def _map_words_to_phones(word_intervals: List[tgt.Interval],
@@ -84,7 +84,7 @@ def _map_words_to_phones(word_intervals: List[tgt.Interval],
                          ) -> WordPhonemeMapping:
     """Maps word intervals to corresponding phone intervals."""
 
-    phone_mapping = collections.OrderedDict()
+    phone_mapping: WordPhonemeMapping = []
 
     for word_interval in word_intervals:
         chosen_phones = [
@@ -93,7 +93,7 @@ def _map_words_to_phones(word_intervals: List[tgt.Interval],
                 phone_interval.end_time <= word_interval.end_time)
         ]
 
-        phone_mapping[word_interval] = chosen_phones
+        phone_mapping.append((word_interval, chosen_phones))
 
     return phone_mapping
 
@@ -103,7 +103,7 @@ def get_pauses(word_phoneme_mapping: WordPhonemeMapping) -> List[Tuple[int, str]
 
     pause_positions = []
 
-    for idx, phone_intervals in enumerate(word_phoneme_mapping.values()):
+    for idx, (_, phone_intervals) in enumerate(word_phoneme_mapping):
         if phone_intervals[-1].text == '':
 
             pause_type = text_prep.TextProcessor.get_pause_type(
@@ -130,8 +130,7 @@ def _max_times_to_spec_frames(max_times: List[float],
                               spec_length: int) -> np.ndarray:
     """Converts list of max times of tokens to spectrogram frame spans."""
 
-    secs_till_now = np.cumsum(np.array(max_times))
-
+    secs_till_now = np.array(max_times)
     frames_till_now = ((secs_till_now / secs_till_now[-1]) * spec_length).astype(np.int32)
     frames_till_now[1:] = frames_till_now[1:] - frames_till_now[:-1]
 
@@ -144,8 +143,8 @@ def get_phone_to_spec_spans(interval_mapping: WordPhonemeMapping,
 
     max_times = []
 
-    for (word_int, phone_ints), phones in zip(interval_mapping.items(),
-                                              original_mapping.values()):
+    for (word_int, phone_ints), (_, phones) in zip(interval_mapping,
+                                              original_mapping):
 
         if len(phones) != len(phone_ints):
             phone_length = (word_int.end_time - word_int.start_time) / len(phones)
@@ -161,6 +160,6 @@ def get_word_to_spec_spans(interval_mapping: WordPhonemeMapping,
                            spec_length: int) -> np.ndarray:
     """Computes mapping from words to spectrogram frames."""
 
-    max_times = [word_int.end_time for word_int in interval_mapping.keys()]
+    max_times = [word_int.end_time for (word_int, _) in interval_mapping]
 
     return _max_times_to_spec_frames(max_times, spec_length)
