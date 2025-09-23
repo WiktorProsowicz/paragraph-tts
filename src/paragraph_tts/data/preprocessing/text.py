@@ -14,7 +14,7 @@ import re
 import numpy as np
 import gruut
 import torch
-from DeBERTa import deberta
+from transformers import DebertaV2Tokenizer, DebertaV2Model
 
 
 def _logger():
@@ -148,10 +148,9 @@ class TextProcessor:
     def __init__(self):
         """Inits the text processor."""
 
-        self._pretrained_bert_id = 'xxlarge-v2'
-        vocab_path, vocab_type = deberta.load_vocab(pretrained_id=self._pretrained_bert_id)
-        self._tokenizer = deberta.tokenizers[vocab_type](vocab_path)
-        self._deberta_embedder: Optional[deberta.DeBERTa] = None
+        self._pretrained_bert_id = 'microsoft/deberta-v2-xxlarge'
+        self._tokenizer = DebertaV2Tokenizer.from_pretrained(self._pretrained_bert_id)
+        self._deberta_embedder: Optional[DebertaV2Model] = None
         self._phoneme_to_id = {p: i for i, p in enumerate(self.SUPPORTED_PHONEMES, start=1)}
 
     @staticmethod
@@ -256,14 +255,11 @@ class TextProcessor:
         input_ids = self._tokenizer.convert_tokens_to_ids(input_tokens)
         token_type_ids = [0] + [0] * (len(tokens1) + 1) + [1] * (len(tokens2) + 1)
 
-        return self._get_embedder()(input_ids=torch.tensor([input_ids]),
-                              token_type_ids=torch.tensor([token_type_ids]))[0][0]
-
-    def _get_embedder(self) -> deberta.DeBERTa:
+    def _get_embedder(self) -> DebertaV2Model:
         """Returns lazy-initialized DeBERTa embedder."""
 
         if not self._deberta_embedder:
-            self._deberta_embedder = deberta.DeBERTa(pre_trained=self._pretrained_bert_id)
+            self._deberta_embedder = DebertaV2Model.from_pretrained(self._pretrained_bert_id)
 
         return self._deberta_embedder
 

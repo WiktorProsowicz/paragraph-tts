@@ -19,7 +19,6 @@ build_project:
     #!/usr/bin/env bash
     echo "Installing project..."
     source .venv/bin/activate
-    export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
     pip install -e .
 
 # Install project with its dev deps into the virtual environment.
@@ -27,7 +26,6 @@ build_project_dev:
     #!/usr/bin/env bash
     echo "Installing project in development mode..."
     source .venv/bin/activate
-    export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
     pip install -e .[dev]
 
 # Run pre-commit hooks on all files.
