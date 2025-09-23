@@ -1,15 +1,27 @@
+# -*- coding: utf-8 -*-
 """Contains audio processing utilities."""
-
-from typing import List, Tuple, Dict, Any
 import dataclasses
 import logging
+import sys
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import TypeAlias
+import collections
+import itertools
+import re
 
+import numpy as np
 import gruut
+import torch
 from DeBERTa import deberta
 
 
 def _logger():
     return logging.getLogger(__name__)
+
+
+TokenMapping: TypeAlias = collections.OrderedDict[str, List[str]]
 
 
 @dataclasses.dataclass
@@ -18,10 +30,40 @@ class TextFeatures:
 
     normalized_text: str
     words: List[str]
-    phonemes: List[str]
-    bert_tokens: List[str]
-    word_to_phoneme_spans: List[int]  # Lengths of words in phonemes.
-    word_to_token_spans: List[int]  # Lengths of words in BERT tokens.
+    word_phoneme_mapping: TokenMapping
+    word_bert_mapping: TokenMapping
+
+    def get_phoneme_sequence(self) -> List[str]:
+        """Returns the full phoneme sequence for the text."""
+
+        return list(itertools.chain(*self.word_phoneme_mapping.values()))
+
+    def get_bert_token_sequence(self) -> List[str]:
+        """Returns the full BERT token sequence for the text."""
+
+        return list(itertools.chain(*self.word_bert_mapping.values()))
+
+    def get_word_to_phoneme_spans(self) -> np.ndarray:
+        """Returns spans mapping words to phonemes."""
+
+        return np.ndarray([len(phonemes) for phonemes in self.word_phoneme_mapping.values()])
+
+    def get_word_to_token_spans(self) -> np.ndarray:
+        """Returns spans mapping words to BERT tokens."""
+
+        return np.ndarray([len(tokens) for tokens in self.word_bert_mapping.values()])
+
+
+def add_pauses(text_features: TextFeatures, pauses: List[Tuple[int, str]]):
+    """Adds pauses to phonemes and updates word-phoneme spans.
+
+    Args:
+        text_features: Text features to modify.
+        pauses: List of (word_index, pause_type) tuples.
+    """
+
+    for word_idx, pause_type in reversed(pauses):
+        text_features.word_phoneme_mapping[text_features.words[word_idx]].append(pause_type)
 
 
 @dataclasses.dataclass
@@ -66,6 +108,7 @@ class TextProcessor:
     puncts_after_quotes_replace = {
         '"!': '!"',
         '"?': '?"',
+        '."': '."',
     }
 
     apostrophe_replacements = {
@@ -80,10 +123,15 @@ class TextProcessor:
     }
 
     allowed_chars = (
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        'abcdefghijklmnopqrstuvwxyz'
+        '0123456789'
         " .,:!?'\"$€"
+    )
+
+    allowed_chars_for_word_repr = (
+        'abcdefghijklmnopqrstuvwxyz'
+        "'"
     )
 
     def __init__(self):
@@ -105,9 +153,10 @@ class TextProcessor:
         for pattern, replacement in TextProcessor.apostrophe_replacements.items():
             text = text.replace(pattern, replacement)
 
-        text = filter(lambda x: x in TextProcessor.allowed_chars, text)
-        text = "".join(text)
-        text = " ".join(text.split())
+        text = text.replace('-', ' ')
+
+        text = ''.join(filter(lambda x: x in TextProcessor.allowed_chars, text))
+        text = ' '.join(text.split())
 
         return text
 
@@ -118,29 +167,35 @@ class TextProcessor:
         with open(text_path, 'r', encoding='utf-8') as text_f:
             return text_f.read().strip()
 
+    @staticmethod
+    def get_pause_type(pause_length: float) -> str:
+        """Returns the type of pause based on its length."""
+
+        if pause_length < 0.2:
+            return '<short_pause>'
+
+        if pause_length < 0.7:
+            return '<medium_pause>'
+
+        return '<long_pause>'
+
     def tokenize_text(self, text: str) -> TextFeatures:
         """Processes and tokenizes text."""
 
         normalized_text = self._prepare_for_tokenization(text)
 
-        word_structs = self._get_word_structs(
-            normalized_text.replace('"', '`'))
-        self._post_process_word_structs(word_structs)
+        word_structs = self._get_word_structs(normalized_text)
 
-        word_to_phoneme_spans = []
-        word_to_token_spans = []
-        bert_tokens = []
-        phonemes = []
         words = []
+        word_phoneme_mapping: TokenMapping = collections.OrderedDict()
+        word_bert_mapping: TokenMapping = collections.OrderedDict()
 
         for word_struct in word_structs:
             words.append(word_struct.text)
-            phonemes.extend(word_struct.phonemes)
-            word_to_phoneme_spans.append(len(word_struct.phonemes))
+            word_phoneme_mapping[word_struct.text] = word_struct.phonemes
 
             tokens = self._tokenizer.tokenize(word_struct.text_with_punct)
-            bert_tokens.extend(tokens)
-            word_to_token_spans.append(len(tokens))
+            word_bert_mapping[word_struct.text] = tokens
 
         return TextFeatures(
             normalized_text=normalized_text,
@@ -155,18 +210,25 @@ class TextProcessor:
 
         text = self.clean_text(text)
 
-        for pattern, replacement in self.single_puncts_replace.items():
-            text = text.replace(pattern, replacement)
+        def scream_case_replacer(match: re.Match) -> str:
+            return match.group(0).capitalize()
 
-        for pattern, replacement in self.puncts_before_quotes_replace.items():
+        text = re.sub(r'\b[A-Z]{2,}\b', scream_case_replacer, text)
+
+        for pattern, replacement in self.single_puncts_replace.items():
             text = text.replace(pattern, replacement)
 
         return text
 
-    def _get_word_structs(self, text) -> List[_WordStruct]:
+    def _get_word_structs(self, text: str) -> List[_WordStruct]:
         """Converts text to a list of word structs."""
 
-        word_structs = []
+        for pattern, replacement in self.puncts_before_quotes_replace.items():
+            text = text.replace(pattern, replacement)
+
+        text = text.replace('"', '`')
+
+        word_structs: List[_WordStruct] = []
 
         for sentence in gruut.sentences(text,
                                         lang='en-us',
@@ -181,38 +243,30 @@ class TextProcessor:
 
                 if word.is_break:
                     word_structs[-1].text_with_punct += word.text
-                    word_structs[-1].phonemes.append(word.text)
                     continue
 
-                word_phonemes = list(word.phonemes)
-
-                if word.text.startswith('`'):
-                    word_phonemes = ['"'] + word_phonemes
-
-                if word.text.endswith('`'):
-                    word_phonemes = word_phonemes + ['"']
-
                 word_structs.append(_WordStruct(
-                    text=word.text.replace('`', ''),
-                    phonemes=word_phonemes,
+                    text=self._get_proper_word_representation(word.text.lower()),
+                    phonemes=list(word.phonemes),
                     text_with_punct=word.text.replace('`', '"')))
 
+        self._post_process_word_structs(word_structs)
+
         return word_structs
+
+    def _get_proper_word_representation(self, word: str) -> str:
+        """Converts a word to its proper representation for tokenization."""
+
+        return ''.join(filter(lambda x: x in TextProcessor.allowed_chars_for_word_repr, word))
 
     def _post_process_word_structs(self, word_structs: List[_WordStruct]):
         """Post-processes word structs to fix punctuation placement."""
 
         for word_struct in word_structs:
 
-            word_phonemes = ' '.join(word_struct.phonemes)
-            word_phonemes = word_phonemes.replace(
-                '" !', '! "').replace('" ?', '? "')
-            word_phonemes = word_phonemes.split(' ')
-
             text_with_punct = word_struct.text_with_punct
 
             for pattern, replacement in self.puncts_after_quotes_replace.items():
                 text_with_punct = text_with_punct.replace(pattern, replacement)
 
-            word_struct.phonemes = word_phonemes
             word_struct.text_with_punct = text_with_punct
