@@ -7,7 +7,7 @@ name = "paragraph_tts"
 version = "0.1.0"
 requires-python=">=3.11"
 dependencies = [
-    "torch>=2.5.1",
+    "torch>=2.6.0",
     "tensorboard>=2.18.0",
     "pandas>=2.3.2",
     "g2p_en>=2.1.0",

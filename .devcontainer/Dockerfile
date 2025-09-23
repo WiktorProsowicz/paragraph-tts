@@ -5,7 +5,7 @@
 # environment without installing anything locally on the system.
 # ------------------------------------------------------------------------
 
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
 
 ARG DEBIAN_FRONTEND=noninteractive
 
