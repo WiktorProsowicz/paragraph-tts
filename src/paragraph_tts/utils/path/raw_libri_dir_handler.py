@@ -233,6 +233,36 @@ class RawLibriDirHandler:
             sentences=context_sentences
         )
 
+    def get_utterance(self, spk_id: int, chap_id: int, para_id: int,
+                      utt_id: int) -> Optional[UtteranceInfo]:
+        """Returns information about a specific utterance, if it exists."""
+
+        base_name = f'{spk_id}_{chap_id}_{para_id:06d}_{utt_id:06d}'
+
+        chapter_path = os.path.join(
+            self._raw_ds_path,
+            self._spk_to_split[spk_id],
+            str(spk_id),
+            str(chap_id)
+        )
+
+        utt_info = UtteranceInfo(utt_id=utt_id,
+                                 para_id=para_id,
+                                 chap_id=chap_id,
+                                 spk_id=spk_id,
+                                 text_path=os.path.join(
+                                     chapter_path,
+                                     base_name + '.normalized.txt'),
+                                 wav_path=os.path.join(
+                                     chapter_path,
+                                     base_name + '.wav'))
+
+        if any(not os.path.exists(p) for p in (utt_info.text_path, utt_info.wav_path)):
+            _logger().debug('Utterance with missing files: %s.', utt_info)
+            return None
+
+        return utt_info
+
     def _get_chap_and_utt_ids(self,
                               chap_id: int,
                               spk_id) -> Dict[int, Set[int]]:
