@@ -76,6 +76,8 @@ class LibriTTSRPreprocessor:
 
                 self._process_paragraph(para_info)
 
+        _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
+
         self._normalize_contours_for_speaker(speaker_id)
 
     def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo):
@@ -90,11 +92,15 @@ class LibriTTSRPreprocessor:
 
         original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
 
+        _logger().debug('Preparing context embeddings for original paragraph %s',
+                        original_paragraph)
+
         self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
                                          os.path.join(context_embeddings_dir, 'original'))
 
         for utt_info in para_info.utterances:
 
+            _logger().debug('Processing utterance %s', utt_info)
             self._process_utterance(utt_info, dst_dir, context_embeddings_dir)
 
     def _process_utterance(self,
