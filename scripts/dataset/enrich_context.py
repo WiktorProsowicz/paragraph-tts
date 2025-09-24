@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import sys
+from typing import Any, Dict
 
 import hydra
 import omegaconf
@@ -67,7 +68,7 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
                             if not contexts_dir_handler.contains_contexts_for(utt_info)]
 
     utterances_to_enrich = [utt_info for utt_info in utterances_to_enrich
-                            if _should_enrich_utterance(utt_info)]
+                            if _should_enrich_utterance(utt_info, dict(script_cfg.filters))]
 
     n_enriched_utterances = 0
 
@@ -97,12 +98,21 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
         _logger().info('No utterances were enriched for paragraph: %s', para_info)
 
 
-def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo):
+def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo,
+                             filters: Dict[str, Any]) -> bool:
 
     text = text_prep.TextProcessor.load_text(para_info.text_path)
     text = text_prep.TextProcessor.clean_text(text)
 
-    return librittsr_helpers.is_sentence_whole(text)
+    n_words = len(text.split())
+
+    if n_words > filters['max_words_in_utterance']:
+        return False
+
+    if not filters['allow_fragmented_sentences'] and librittsr_helpers.is_sentence_whole(text):
+        return False
+
+    return True
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='enrich_context')
@@ -111,7 +121,8 @@ def main(script_cfg: omegaconf.DictConfig):
 
     logging_utils.setup_logging('enrich_context')
 
-    _logger().info('Script configuration:\n%s', json.dumps(dict(script_cfg), indent=4))
+    _logger().info('Script configuration:\n%s',
+                   json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
     os.makedirs(script_cfg.output_path, exist_ok=True)
 
@@ -119,7 +130,8 @@ def main(script_cfg: omegaconf.DictConfig):
         'model_name': script_cfg.model_name,
         'max_paragraph_len': script_cfg.max_paragraph_len,
         'min_paragraph_len': script_cfg.min_paragraph_len,
-        'num_contexts_to_generate': script_cfg.num_contexts_to_generate
+        'num_contexts_to_generate': script_cfg.num_contexts_to_generate,
+        'filters': omegaconf.OmegaConf.to_container(script_cfg.filters)
     }
 
     with open(os.path.join(script_cfg.output_path, 'metadata.json'), 'w', encoding='utf-8') as f:
@@ -140,14 +152,21 @@ def main(script_cfg: omegaconf.DictConfig):
 
     ds_metadata = librittsr_helpers.LibriTTSRMetadata()
 
-    paragraphs_to_enrich = list(raw_path_handler.iter_all_paragraphs())
+    def iter_filtered_paragraphs():
+        for para_info in raw_path_handler.iter_all_paragraphs():
+            split = raw_path_handler.get_split_for_speaker(para_info.spk_id)
+
+            if split in script_cfg.filters.choose_splits:
+                yield para_info
+
+    paragraphs_to_enrich = list(iter_filtered_paragraphs())
     random.shuffle(paragraphs_to_enrich)
 
     for para_info in tqdm.tqdm(itertools.islice(paragraphs_to_enrich,
-                                                script_cfg.max_enriched_paragraph),
+                                                script_cfg.max_enriched_paragraphs),
                                desc='Enriching context',
                                dynamic_ncols=True,
-                               total=script_cfg.max_enriched_paragraph,
+                               total=script_cfg.max_enriched_paragraphs,
                                miniters=1,
                                unit='paragraphs',
                                colour='#115b80'):
