@@ -218,6 +218,7 @@ class LibriTTSRPreprocessor:
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
+                                            'input_data',
                                             utt_dir,
                                             f'{contour_file_name}.pt')
 
@@ -229,6 +230,7 @@ class LibriTTSRPreprocessor:
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
+                                            'input_data',
                                             utt_dir,
                                             f'{contour_file_name}.pt')
 
