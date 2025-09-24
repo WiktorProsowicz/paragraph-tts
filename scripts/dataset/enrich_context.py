@@ -102,10 +102,10 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
         _logger().info('No utterances were enriched for paragraph: %s', str(para_info))
 
 
-def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo,
+def _should_enrich_utterance(utt_info: raw_libri_dir_handler.UtteranceInfo,
                              filters: Dict[str, Any]) -> bool:
 
-    text = text_prep.TextProcessor.load_text(para_info.text_path)
+    text = text_prep.TextProcessor.load_text(utt_info.text_path)
     text = text_prep.TextProcessor.clean_text(text)
 
     n_words = len(text.split())
