@@ -64,6 +64,10 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
 
     original_paragraph = raw_path_handler.get_original_paragraph(para_info)
 
+    if original_paragraph is None:
+        _logger().info('Skipping paragraph with missing original .books.tsv: %s', str(para_info))
+        return
+
     utterances_to_enrich = [utt_info for utt_info in para_info.utterances
                             if not contexts_dir_handler.contains_contexts_for(utt_info)]
 
@@ -95,7 +99,7 @@ def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
         n_enriched_utterances += 1
 
     if n_enriched_utterances == 0:
-        _logger().info('No utterances were enriched for paragraph: %s', para_info)
+        _logger().info('No utterances were enriched for paragraph: %s', str(para_info))
 
 
 def _should_enrich_utterance(para_info: raw_libri_dir_handler.UtteranceInfo,

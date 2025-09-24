@@ -87,16 +87,29 @@ class LibriTTSRPreprocessor:
                                str(para_info.spk_id),
                                f'{para_info.chap_id}_{para_info.para_id}')
 
-        context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
-        os.makedirs(context_embeddings_dir, exist_ok=True)
-
         original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
 
-        _logger().debug('Preparing context embeddings for original paragraph %s',
-                        original_paragraph)
+        if original_paragraph is None:
 
-        self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
-                                         os.path.join(context_embeddings_dir, 'original'))
+            if self._enriched_contexts_path_hand is None:
+                _logger().debug('Skipping paragraph with missing original context: %s', para_info)
+                return
+
+            if not any(self._enriched_contexts_path_hand.contains_contexts_for(utt_info)
+                       for utt_info in para_info.utterances):
+                _logger().debug('Skipping paragraph with neither original nor enriched context: %s',
+                                para_info)
+                return
+
+        else:
+            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            os.makedirs(context_embeddings_dir, exist_ok=True)
+
+            _logger().debug('Preparing context embeddings for original paragraph %s',
+                            original_paragraph)
+
+            self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
+                                             os.path.join(context_embeddings_dir, 'original'))
 
         for utt_info in para_info.utterances:
 
