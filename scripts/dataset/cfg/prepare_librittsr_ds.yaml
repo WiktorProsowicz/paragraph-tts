@@ -5,3 +5,16 @@ alignments_path: tmp/librittsr_alignments
 enriched_contexts_path: tmp/librittsr_enriched_contexts
 prepare_speaker_embeddings: true
 embedders_device: cpu
+filters:
+  max_words_in_utterance: 100
+  choose_splits:
+    [
+      "dev-clean",
+      "dev-other",
+      "test-clean",
+      "test-other",
+      "train-clean-100",
+      "train-clean-360",
+      "train-other-500",
+    ]
+  allow_fragmented_sentences: true
