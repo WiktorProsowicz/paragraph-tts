@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Contains classes for processing/reading LibriTTS-R dataset."""
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Callable
 import logging
 import os
 import time
@@ -10,6 +10,7 @@ import torch
 import tqdm  # type: ignore
 from comp_trans_tts import (deepspeaker)  # type: ignore
 from sklearn.preprocessing import StandardScaler
+import json
 
 from paragraph_tts import data
 from paragraph_tts.utils.path import raw_libri_dir_handler
@@ -35,10 +36,17 @@ class LibriTTSRPreprocessor:
             alignments_dir_hand: AlignmentsDirHandler,
             output_path: str,
             multi_speaker: bool,
-            embedders_device: str):
+            embedders_device: str,
+            utterance_filter: Callable[[raw_libri_dir_handler.UtteranceInfo], bool]):
         """
         Args:
             raw_path_handler: Handler for accessing raw dataset files.
+            enriched_contexts_path_hand: Handler for accessing enriched contexts.
+            alignments_dir_hand: Handler for accessing alignments.
+            output_path: Path to save preprocessed files to.
+            multi_speaker: Whether to prepare speaker embeddings.
+            embedders_device: Device to run embedders on.
+            utterance_filter: Function that returns True if the utterance should be processed.
         """
 
         self._raw_path_handler = raw_path_handler
@@ -58,6 +66,7 @@ class LibriTTSRPreprocessor:
             trim_top_db=23
         )
         self._text_processor = text_prep.TextProcessor(embedders_device)
+        self._utterance_filter = utterance_filter
 
     def run_for_speaker(self, speaker_id: int):
         """Runs preprocessing of samples for given speaker."""
@@ -80,6 +89,12 @@ class LibriTTSRPreprocessor:
 
         self._normalize_contours_for_speaker(speaker_id)
 
+    def save_metadata(self, metadata: Dict[str, Any]):
+        """Saves dataset metadata to output path."""
+
+        with open(os.path.join(self._output_path, 'metadata.json'), 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=4)
+
     def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo):
 
         dst_dir = os.path.join(self._output_path,
@@ -87,18 +102,40 @@ class LibriTTSRPreprocessor:
                                str(para_info.spk_id),
                                f'{para_info.chap_id}_{para_info.para_id}')
 
-        context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
-        os.makedirs(context_embeddings_dir, exist_ok=True)
-
         original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
 
-        _logger().debug('Preparing context embeddings for original paragraph %s',
-                        original_paragraph)
+        if original_paragraph is None:
 
-        self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
-                                         os.path.join(context_embeddings_dir, 'original'))
+            if self._enriched_contexts_path_hand is None:
+                _logger().debug('Skipping paragraph with missing original context: %s', para_info)
+                return
 
-        for utt_info in para_info.utterances:
+            utts_with_enriched_context = [
+                utt_info
+                for utt_info in filter(self._utterance_filter, para_info.utterances)
+                if self._enriched_contexts_path_hand.contains_contexts_for(utt_info)
+            ]
+
+            if not utts_with_enriched_context:
+                _logger().debug('Skipping paragraph with neither original nor enriched context: %s',
+                                para_info)
+                return
+
+            utterances_to_process = utts_with_enriched_context
+
+        else:
+            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            os.makedirs(context_embeddings_dir, exist_ok=True)
+
+            _logger().debug('Preparing context embeddings for original paragraph %s',
+                            original_paragraph)
+
+            self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
+                                             os.path.join(context_embeddings_dir, 'original'))
+            
+            utterances_to_process = filter(self._utterance_filter, para_info.utterances)
+
+        for utt_info in utterances_to_process:
 
             _logger().debug('Processing utterance %s', utt_info)
             self._process_utterance(utt_info, dst_dir, context_embeddings_dir)
@@ -218,6 +255,7 @@ class LibriTTSRPreprocessor:
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
+                                            'input_data',
                                             utt_dir,
                                             f'{contour_file_name}.pt')
 
@@ -229,6 +267,7 @@ class LibriTTSRPreprocessor:
 
                 contour_path = os.path.join(speaker_path,
                                             para_dir,
+                                            'input_data',
                                             utt_dir,
                                             f'{contour_file_name}.pt')
 

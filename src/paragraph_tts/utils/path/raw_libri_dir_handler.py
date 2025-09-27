@@ -58,6 +58,9 @@ class ParagraphInfo:
     is_complete: bool
     utterances: list[UtteranceInfo]
 
+    def __str__(self):
+        return f'Paragraph(spk_id={self.spk_id}, chap_id={self.chap_id}, para_id={self.para_id})'
+
 
 @dataclasses.dataclass
 class OriginalParagraph:
@@ -197,7 +200,7 @@ class RawLibriDirHandler:
             for para_info in self.iter_paragraphs(spk_id, chap_id):
                 yield from para_info.utterances
 
-    def get_original_paragraph(self, para_info: ParagraphInfo) -> OriginalParagraph:
+    def get_original_paragraph(self, para_info: ParagraphInfo) -> Optional[OriginalParagraph]:
         """Returns original, complete version of a paragraph."""
 
         books_file_path = os.path.join(
@@ -208,8 +211,8 @@ class RawLibriDirHandler:
             f'{para_info.spk_id}_{para_info.chap_id}.book.tsv')
 
         if not os.path.exists(books_file_path):
-            _logger().critical('Missing .books.tsv file: %s', books_file_path)
-            sys.exit(1)
+            _logger().debug('Missing .books.tsv file: %s', books_file_path)
+            return None
 
         sought_id_prefix = f'{para_info.spk_id}_{para_info.chap_id}_{para_info.para_id:06d}'
 
