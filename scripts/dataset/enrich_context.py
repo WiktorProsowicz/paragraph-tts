@@ -160,8 +160,17 @@ def main(script_cfg: omegaconf.DictConfig):
         for para_info in raw_path_handler.iter_all_paragraphs():
             split = raw_path_handler.get_split_for_speaker(para_info.spk_id)
 
-            if split in script_cfg.filters.choose_splits:
-                yield para_info
+            if split not in script_cfg.filters.choose_splits:
+                continue
+
+            original_paragraph = raw_path_handler.get_original_paragraph(para_info)
+
+            if original_paragraph is not None:
+                context_len = len(para_info.utterances)
+                if context_len > script_cfg.filters.max_original_context_length:
+                    continue
+
+            yield para_info
 
     paragraphs_to_enrich = list(iter_filtered_paragraphs())
     random.shuffle(paragraphs_to_enrich)
