@@ -153,6 +153,7 @@ class TextProcessor:
         self._deberta_embedder: Optional[DebertaV2Model] = None
         self._phoneme_to_id = {p: i for i, p in enumerate(self.SUPPORTED_PHONEMES, start=1)}
         self._bert_device = bert_device
+        self._max_sentences_in_batch = 16
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -272,11 +273,7 @@ class TextProcessor:
                           for tokens in input_tokens]
 
         with torch.no_grad():
-            model_output = self._get_embedder()(
-                input_ids=torch.tensor(input_ids).to(self._bert_device),
-                token_type_ids=torch.tensor(token_type_ids).to(self._bert_device),
-                attention_mask=torch.tensor(attention_mask).to(self._bert_device))
-            outputs = model_output.last_hidden_state.cpu()
+            outputs = self._run_bert_in_batches(input_ids, attention_mask, token_type_ids)
 
         return [outputs[i, 0] for i in range(len(sentences) - 1)]
 
@@ -295,19 +292,44 @@ class TextProcessor:
                           for tokens in input_tokens]
 
         with torch.no_grad():
-            model_output = self._get_embedder()(
-                input_ids=torch.tensor(input_ids).to(self._bert_device),
-                attention_mask=torch.tensor(attention_mask).to(self._bert_device)
-            )
-            outputs = model_output.last_hidden_state.cpu()
+            outputs = self._run_bert_in_batches(input_ids, attention_mask)
 
         return [outputs[i][1:len(tokenized_sentence) + 1]
                 for i, tokenized_sentence in enumerate(tokenized_sentences)]
+    
+    def _run_bert_in_batches(self,
+                             input_ids: List[List[int]],
+                             attention_mask: List[List[int]],
+                             token_type_ids: Optional[List[List[int]]] = None) -> torch.Tensor:
+        
+        outputs: List[torch.Tensor] = []
+
+        for i in range(0, len(input_ids), self._max_sentences_in_batch):
+            batch_input_ids = input_ids[i:i + self._max_sentences_in_batch]
+            batch_attention_mask = attention_mask[i:i + self._max_sentences_in_batch]
+            
+            if token_type_ids is not None:
+                batch_token_type_ids = token_type_ids[i:i + self._max_sentences_in_batch]
+            else:
+                batch_token_type_ids = None
+
+            with torch.no_grad():
+                model_output = self._get_embedder()(
+                    input_ids=torch.tensor(batch_input_ids).to(self._bert_device),
+                    attention_mask=torch.tensor(batch_attention_mask).to(self._bert_device),
+                    token_type_ids=(torch.tensor(batch_token_type_ids).to(self._bert_device)
+                                    if batch_token_type_ids is not None else None)
+                )
+                batch_outputs = model_output.last_hidden_state.cpu()
+                outputs.append(batch_outputs)
+
+        return torch.cat(outputs, dim=0)
+
 
     def _get_embedder(self) -> DebertaV2Model:
         """Returns lazy-initialized DeBERTa embedder."""
 
-        if not self._deberta_embedder:
+        if self._deberta_embedder is None:
             model = DebertaV2Model.from_pretrained(self._pretrained_bert_id)
             self._deberta_embedder = model.to(self._bert_device)
 
