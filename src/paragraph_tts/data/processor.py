@@ -225,7 +225,7 @@ class LibriTTSRPreprocessor:
 
         return {
             'phoneme_ids': torch.tensor(phoneme_ids, dtype=torch.long),
-            'bert_embeddings': bert_embeddings,
+            'bert_embeddings': bert_embeddings.clone().to(torch.float16),
             'bert_to_word_pool_matrix': torch.tensor(bert_to_word_pool_matrix, dtype=torch.float),
             'word_to_phoneme_indices': torch.tensor(word_to_phoneme_indices, dtype=torch.long),
             'spec': torch.tensor(spec, dtype=torch.float),
@@ -298,10 +298,10 @@ class LibriTTSRPreprocessor:
 
         os.makedirs(output_dir)
 
-        torch.save(single_embeddings,
+        torch.save([t.clone().to(torch.float16) for t in single_embeddings],
                    os.path.join(output_dir, 'single_embeddings.pt'))
 
-        torch.save(paired_embeddings,
+        torch.save([t.clone().to(torch.float16) for t in paired_embeddings],
                    os.path.join(output_dir, 'paired_embeddings.pt'))
 
     def _prepare_spk_embedding(self, speaker_id: int):
