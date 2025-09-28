@@ -129,6 +129,9 @@ def main(script_cfg: omegaconf.DictConfig):
     _logger().info('Collecting utterances stats...')
     overall_stats['utterances_stats'] = feature_extractor.get_utterances_stats()
 
+    _logger().info('Collecting original paragraphs stats...')
+    overall_stats['original_paragraphs_stats'] = feature_extractor.get_original_paragraphs_stats()
+
     overall_stats_path = os.path.join(script_cfg.output_dir, 'overall_stats.yaml')
     with open(overall_stats_path, 'w', encoding='utf-8') as stats_f:
         yaml.dump(overall_stats, stats_f)

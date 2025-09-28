@@ -78,7 +78,7 @@ class FeaturesExtractor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = preprocessing.text.TextProcessor()
+        self._text_processor = preprocessing.text.TextProcessor(bert_device='cpu')
 
     def paragraph_as_lines(self, para_info: ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
@@ -205,6 +205,38 @@ class FeaturesExtractor:
         paragraphs_stats['num_valid_paragraphs'] = n_valid_paragraphs
 
         return paragraphs_stats
+    
+    def get_original_paragraphs_stats(self) -> Dict[str, Any]:
+        """Returns stats related to original paragraphs (entire paragraphs from books)."""
+
+        stats_dict: Dict[str, Any] = {}
+
+        numerical_stats = self._get_stats_per_original_paragraph()
+
+        stats_dict['num_original_paragraphs'] = len(numerical_stats['n_words_in_paragraph'])
+
+        stats_dict['num_words_per_paragraph'] = _calculate_basic_numerical_stats(
+            numerical_stats['n_words_in_paragraph']
+        )
+
+        stats_dict['num_sentences_per_paragraph'] = _calculate_basic_numerical_stats(
+            numerical_stats['n_sentences_in_paragraph']
+        )
+
+        stats_dict['num_words_per_sentence'] = _calculate_basic_numerical_stats(
+            numerical_stats['n_words_in_sentence']
+        )
+
+        stats_dict['num_paras_with_1_sentence'] = sum(
+            1 for n_sent in numerical_stats['n_sentences_in_paragraph'] if n_sent == 1
+        )
+
+        stats_dict['num_paras_with_2_sentences'] = sum(
+            1 for n_sent in numerical_stats['n_sentences_in_paragraph'] if n_sent == 2
+        )
+
+        return stats_dict
+
 
     def get_utterances_stats(self) -> Dict[str, Any]:
         """Returns stats related to utterances."""
@@ -310,6 +342,20 @@ class FeaturesExtractor:
 
         figures['length_sec_per_utterance'] = fig
 
+        stats_per_orig_para = self._get_stats_per_original_paragraph()
+
+        bins = min(100, len(set(stats_per_orig_para['n_sentences_in_paragraph'])))
+        fig, ax = plt.subplots()
+        ax.hist(stats_per_orig_para['n_sentences_in_paragraph'], bins=bins)
+        ax.set_title('Number of sentences per original paragraph')
+        ax.set_xlabel('Number of sentences')
+        ax.set_ylabel('Number of original paragraphs')
+        ax.axvline(x=np.mean(stats_per_orig_para['n_sentences_in_paragraph']),
+                   color='red', linestyle='--', label='Mean')
+        ax.legend()
+
+        figures['num_sentences_per_original_paragraph'] = fig
+
         return figures
 
     def get_example_paragraphs(self) -> Dict[str, Iterator[ParagraphInfo]]:
@@ -398,6 +444,33 @@ class FeaturesExtractor:
                 'lower_outliers': itertools.islice(length_sec_lower_outliers, 5),
                 'upper_outliers': itertools.islice(length_sec_upper_outliers, 5)
             }
+        }
+    
+    def _get_stats_per_original_paragraph(self) -> Dict[str, Any]:
+
+        n_words_in_paragraph = []
+        n_sentences_in_paragraph = []
+        n_words_in_sentence = []
+
+        for para_info in self._raw_path_handler.iter_all_paragraphs():
+
+            original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+
+            if original_paragraph is None:
+                continue
+
+            n_sentences_in_paragraph.append(len(original_paragraph.sentences))
+            
+            word_counts = [len(self._text_processor.clean_text(sentence).split())
+                           for sentence in original_paragraph.sentences.values()]
+            
+            n_words_in_paragraph.append(sum(word_counts))
+            n_words_in_sentence.extend(word_counts)
+
+        return {
+            'n_words_in_paragraph': n_words_in_paragraph,
+            'n_sentences_in_paragraph': n_sentences_in_paragraph,
+            'n_words_in_sentence': n_words_in_sentence
         }
 
     def _get_stats_per_speaker(self) -> Dict[str, Any]:
