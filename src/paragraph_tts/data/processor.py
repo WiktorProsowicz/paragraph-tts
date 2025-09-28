@@ -201,7 +201,7 @@ class LibriTTSRPreprocessor:
         phoneme_ids = self._text_processor.obtain_phoneme_ids(
             text_features.get_phoneme_sequence())
         bert_embeddings = self._text_processor.obtain_bert_embeddings(
-            text_features.get_bert_token_sequence()).clone()
+            text_features.get_bert_token_sequence())
 
         bert_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
             text_features.get_word_to_token_spans()
@@ -225,7 +225,7 @@ class LibriTTSRPreprocessor:
 
         return {
             'phoneme_ids': torch.tensor(phoneme_ids, dtype=torch.long),
-            'bert_embeddings': bert_embeddings,
+            'bert_embeddings': bert_embeddings.clone().to(torch.float16),
             'bert_to_word_pool_matrix': torch.tensor(bert_to_word_pool_matrix, dtype=torch.float),
             'word_to_phoneme_indices': torch.tensor(word_to_phoneme_indices, dtype=torch.long),
             'spec': torch.tensor(spec, dtype=torch.float),
@@ -298,10 +298,10 @@ class LibriTTSRPreprocessor:
 
         os.makedirs(output_dir)
 
-        torch.save([t.clone() for t in single_embeddings],
+        torch.save([t.clone().to(torch.float16) for t in single_embeddings],
                    os.path.join(output_dir, 'single_embeddings.pt'))
 
-        torch.save([t.clone() for t in paired_embeddings],
+        torch.save([t.clone().to(torch.float16) for t in paired_embeddings],
                    os.path.join(output_dir, 'paired_embeddings.pt'))
 
     def _prepare_spk_embedding(self, speaker_id: int):
