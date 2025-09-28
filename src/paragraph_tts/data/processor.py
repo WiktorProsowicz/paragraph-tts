@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional, Any, Callable
 import logging
 import os
-import time
+import dataclasses
 
 import numpy as np
 import torch
@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 import json
 
 from paragraph_tts import data
+from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
@@ -26,6 +27,22 @@ def _logger():
     return logging.getLogger(__name__)
 
 
+@dataclasses.dataclass
+class SampleFilterCfg:
+    """Configuration of utterance/paragraph filter."""
+
+    # Maximum number of words in utterance (either the input utterance or context sentences).
+    max_words_in_utterance: int
+    # Minimum number of words in utterance (either the input utterance or context sentences).
+    min_words_in_utterance: int
+    # Whether to allow processing input utterances that are fragments of sentences. 
+    allow_fragmented_sentences: bool
+    # Maximum number of sentences in paragraph (context).
+    max_paragraph_length: int
+    # Minimum number of sentences in paragraph (context).
+    min_paragraph_length: int
+
+
 class LibriTTSRPreprocessor:
     """Runs preprocessing on raw dataset."""
 
@@ -37,7 +54,7 @@ class LibriTTSRPreprocessor:
             output_path: str,
             multi_speaker: bool,
             embedders_device: str,
-            utterance_filter: Callable[[raw_libri_dir_handler.UtteranceInfo], bool]):
+            filter_cfg: SampleFilterCfg):
         """
         Args:
             raw_path_handler: Handler for accessing raw dataset files.
@@ -46,7 +63,7 @@ class LibriTTSRPreprocessor:
             output_path: Path to save preprocessed files to.
             multi_speaker: Whether to prepare speaker embeddings.
             embedders_device: Device to run embedders on.
-            utterance_filter: Function that returns True if the utterance should be processed.
+            filter_cfg: Configuration of utterance/paragraph filter.
         """
 
         self._raw_path_handler = raw_path_handler
@@ -66,7 +83,7 @@ class LibriTTSRPreprocessor:
             trim_top_db=23
         )
         self._text_processor = text_prep.TextProcessor(embedders_device)
-        self._utterance_filter = utterance_filter
+        self._filter_cfg = filter_cfg
 
     def run_for_speaker(self, speaker_id: int):
         """Runs preprocessing of samples for given speaker."""
@@ -102,9 +119,16 @@ class LibriTTSRPreprocessor:
                                str(para_info.spk_id),
                                f'{para_info.chap_id}_{para_info.para_id}')
 
+        utterances_to_process = list(filter(self._should_process_utterance, para_info.utterances))
+
+        if not utterances_to_process:
+            _logger().debug('No utterances to process for paragraph %s, skipping.', para_info)
+            return
+
         original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
 
-        if original_paragraph is None:
+        if original_paragraph is None or (
+                not self._should_process_context(list(original_paragraph.sentences.values()))):
 
             if self._enriched_contexts_path_hand is None:
                 _logger().debug('Skipping paragraph with missing original context: %s', para_info)
@@ -112,8 +136,8 @@ class LibriTTSRPreprocessor:
 
             utts_with_enriched_context = [
                 utt_info
-                for utt_info in filter(self._utterance_filter, para_info.utterances)
-                if self._enriched_contexts_path_hand.contains_contexts_for(utt_info)
+                for utt_info in utterances_to_process
+                if self._exists_valid_enriched_context_for(utt_info)
             ]
 
             if not utts_with_enriched_context:
@@ -132,13 +156,66 @@ class LibriTTSRPreprocessor:
 
             self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
                                              os.path.join(context_embeddings_dir, 'original'))
-            
-            utterances_to_process = filter(self._utterance_filter, para_info.utterances)
 
         for utt_info in utterances_to_process:
 
             _logger().debug('Processing utterance %s', utt_info)
             self._process_utterance(utt_info, dst_dir, context_embeddings_dir)
+
+    def _should_process_utterance(self, utt_info: raw_libri_dir_handler.UtteranceInfo) -> bool:
+
+        text = self._text_processor.load_text(utt_info.text_path)
+        text = self._text_processor.clean_text(text)
+
+        n_words = len(text.split())
+
+        if n_words > self._filter_cfg.max_words_in_utterance:
+            return False
+
+        if n_words < self._filter_cfg.min_words_in_utterance:
+            return False
+
+        if not self._filter_cfg.allow_fragmented_sentences:
+            if not librittsr_helpers.is_sentence_whole(text):
+                return False
+
+        return True
+
+    def _should_process_context(self, context: List[str]) -> bool:
+
+        if len(context) > self._filter_cfg.max_paragraph_length:
+            return False
+
+        if len(context) < self._filter_cfg.min_paragraph_length:
+            return False
+
+        clean_context = [self._text_processor.clean_text(sent) for sent in context]
+        word_counts = [len(sent.split()) for sent in clean_context]
+
+        if any(wc > self._filter_cfg.max_words_in_utterance for wc in word_counts):
+            return False
+
+        if any(wc < self._filter_cfg.min_words_in_utterance for wc in word_counts):
+            return False
+
+        return True
+
+    def _exists_valid_enriched_context_for(self,
+                                           utterance: raw_libri_dir_handler.UtteranceInfo) -> bool:
+
+        if self._enriched_contexts_path_hand is None:
+            return False
+
+        if not self._enriched_contexts_path_hand.contains_contexts_for(utterance):
+            return False
+
+        contexts = self._enriched_contexts_path_hand.get_contexts_for(utterance)
+
+        for context in contexts:
+            if self._should_process_context(context.as_paragraph()):
+                return True
+
+        return False
 
     def _process_utterance(self,
                            utt_info: raw_libri_dir_handler.UtteranceInfo,
@@ -174,6 +251,10 @@ class LibriTTSRPreprocessor:
                 contexts = self._enriched_contexts_path_hand.get_contexts_for(utt_info)
 
                 for context_idx, context in enumerate(contexts):
+
+                    if not self._should_process_context(context.as_paragraph()):
+                        continue
+
                     self._prepare_context_embeddings(
                         context.as_paragraph(),
                         os.path.join(context_embeddings_dir,

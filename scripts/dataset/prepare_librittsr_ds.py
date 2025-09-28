@@ -24,23 +24,6 @@ def _logger():
     return logging.getLogger(__name__)
 
 
-def _utterance_filter(utt_info: raw_libri_dir_handler.UtteranceInfo,
-                      filters: Dict[str, Any]) -> bool:
-    """Returns True if the utterance passes the filters."""
-
-    text = text_prep.TextProcessor.load_text(utt_info.text_path)
-    text = text_prep.TextProcessor.clean_text(text)
-
-    n_words = len(text.split())
-
-    if n_words > filters['max_words_in_utterance']:
-        return False
-
-    if not filters['allow_fragmented_sentences'] and librittsr_helpers.is_sentence_whole(text):
-        return False
-
-    return True
-
 @hydra.main(version_base=None, config_path='cfg', config_name='prepare_librittsr_ds')
 def main(script_cfg: omegaconf.DictConfig):
     """Runs LibriTTS-R preprocessing."""
@@ -62,13 +45,22 @@ def main(script_cfg: omegaconf.DictConfig):
 
     os.makedirs(script_cfg.processed_ds_output_path, exist_ok=True)
 
+    sample_filter_cfg = data.processor.SampleFilterCfg(
+        max_words_in_utterance=script_cfg.filters.max_words_in_utterance,
+        min_words_in_utterance=script_cfg.filters.min_words_in_utterance,
+        allow_fragmented_sentences=script_cfg.filters.allow_fragmented_sentences,
+        max_paragraph_length=script_cfg.filters.max_context_length,
+        min_paragraph_length=script_cfg.filters.min_context_length
+    )
+
     preprocessor = data.processor.LibriTTSRPreprocessor(raw_ds_path_hand,
                                                         enriched_contexts_path_hand,
                                                         alignments_path_hand,
                                                         script_cfg.processed_ds_output_path,
                                                         script_cfg.prepare_speaker_embeddings,
-                                                        script_cfg.embedders_device)
-    
+                                                        script_cfg.embedders_device,
+                                                        sample_filter_cfg)
+
     preprocessor.save_metadata(
         {
             'prepare_speaker_embeddings': script_cfg.prepare_speaker_embeddings,
@@ -82,7 +74,7 @@ def main(script_cfg: omegaconf.DictConfig):
             split = raw_ds_path_hand.get_split_for_speaker(spk_id)
             if split in script_cfg.filters.choose_splits:
                 yield spk_id
-    
+
     speakers = list(filtered_speakers())
 
     _logger().info('Processing %d speakers', len(speakers))

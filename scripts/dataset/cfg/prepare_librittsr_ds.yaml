@@ -7,6 +7,9 @@ prepare_speaker_embeddings: true
 embedders_device: cpu
 filters:
   max_words_in_utterance: 100
+  min_words_in_utterance: 1
+  max_context_length: 6
+  min_context_length: 3
   choose_splits:
     [
       "dev-clean",
