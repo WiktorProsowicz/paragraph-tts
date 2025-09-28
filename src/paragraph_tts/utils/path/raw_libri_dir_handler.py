@@ -102,7 +102,7 @@ class RawLibriDirHandler:
     def num_speakers(self) -> int:
         """Returns number of speakers in the dataset."""
         return len(self._spk_to_split)
-    
+
     def get_split_for_speaker(self, spk_id: int) -> str:
         """Returns the split (train/dev/test) for a given speaker ID."""
         return self._spk_to_split[spk_id]
@@ -224,6 +224,10 @@ class RawLibriDirHandler:
                                  csv.reader(f, delimiter='\t'))
 
             for row in proper_rows:
+                if len(row) < 3:
+                    _logger().debug('Malformed row %s in .books.tsv file: %s', row, books_file_path)
+                    return None
+
                 utt_id = int(row[0].split('_')[-1])
                 sentence = row[2].strip()
 
