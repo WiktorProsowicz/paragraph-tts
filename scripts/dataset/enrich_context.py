@@ -144,7 +144,8 @@ def main(script_cfg: omegaconf.DictConfig):
     enricher = enrichment.ContextEnricher(model_name=script_cfg.model_name,
                                           ollama_host=script_cfg.ollama_host,
                                           max_paragraph_len=script_cfg.max_paragraph_len,
-                                          min_paragraph_len=script_cfg.min_paragraph_len)
+                                          min_paragraph_len=script_cfg.min_paragraph_len,
+                                          should_retry=script_cfg.should_retry_generate)
 
     if not enricher.is_model_available(script_cfg.model_name):
         _logger().critical('The following model is unavailable at the Ollama server: %s',
@@ -166,7 +167,7 @@ def main(script_cfg: omegaconf.DictConfig):
             original_paragraph = raw_path_handler.get_original_paragraph(para_info)
 
             if original_paragraph is not None:
-                context_len = len(para_info.utterances)
+                context_len = len(original_paragraph.sentences)
                 if context_len > script_cfg.filters.max_original_context_length:
                     continue
 
