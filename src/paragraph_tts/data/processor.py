@@ -146,6 +146,9 @@ class LibriTTSRPreprocessor:
                                 para_info)
                 return
 
+            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            os.makedirs(context_embeddings_dir, exist_ok=True)
+
             utterances_to_process = utts_with_enriched_context
 
         else:
