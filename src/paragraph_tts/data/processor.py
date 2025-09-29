@@ -102,9 +102,10 @@ class LibriTTSRPreprocessor:
 
                 self._process_paragraph(para_info)
 
-        _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
+        if os.path.exists(os.path.join(self._output_path, 'samples', str(speaker_id))):
+            _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
 
-        self._normalize_contours_for_speaker(speaker_id)
+            self._normalize_contours_for_speaker(speaker_id)
 
     def save_metadata(self, metadata: Dict[str, Any]):
         """Saves dataset metadata to output path."""
