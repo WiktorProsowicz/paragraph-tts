@@ -290,6 +290,8 @@ class LibriTTSRPreprocessor:
         word_to_phoneme_indices = alignment_prep.spans_to_indices_of_smaller_seq(
             text_features.get_word_to_phoneme_spans()
         )
+        ling_stats = text_prep.obtain_ling_stats(text_features)
+        pos_tags = self._text_processor.obtain_pos_tags(text_features)
 
         wav = self._audio_processor.load_wav(utt_info.wav_path)
         spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
@@ -309,6 +311,8 @@ class LibriTTSRPreprocessor:
             'bert_embeddings': bert_embeddings.clone().to(torch.float16),
             'bert_to_word_pool_matrix': torch.tensor(bert_to_word_pool_matrix, dtype=torch.float),
             'word_to_phoneme_indices': torch.tensor(word_to_phoneme_indices, dtype=torch.long),
+            'ling_stats': ling_stats,
+            'pos_tags': torch.tensor(pos_tags, dtype=torch.long),
             'spec': torch.tensor(spec, dtype=torch.float),
             'energy': torch.tensor(energy, dtype=torch.float),
             'f0': torch.tensor(f0, dtype=torch.float),

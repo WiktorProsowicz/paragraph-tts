@@ -15,6 +15,7 @@ import numpy as np
 import gruut
 import torch
 from transformers import DebertaV2Tokenizer, DebertaV2Model
+import nltk
 
 
 def _logger():
@@ -64,6 +65,49 @@ def add_pauses(text_features: TextFeatures, pauses: List[Tuple[int, str]]):
 
     for word_idx, pause_type in reversed(pauses):
         text_features.word_phoneme_mapping[word_idx][1].append(pause_type)
+
+
+def obtain_ling_stats(text_features: TextFeatures) -> torch.Tensor:
+    """Calculates phoneme-level linguistic statistics.
+
+    The stats include:
+        - Position of the phoneme in the word (normalized to [0, 1])
+        - Number of phonemes in the word.
+        - Position of the word in the sentence (normalized to [0, 1])
+        - Number of words in the sentence.
+    """
+
+    ph_pos = []
+
+    for _, phonemes in text_features.word_phoneme_mapping:
+
+        if len(phonemes) == 1:
+            ph_pos.append(0.0)
+            continue
+        
+        for i in range(len(phonemes)):
+            ph_pos.append(i / (len(phonemes) - 1))
+
+    ph_num = []
+
+    for _, phonemes in text_features.word_phoneme_mapping:
+
+        ph_num.extend([len(phonemes)] * len(phonemes))
+
+    wd_pos = []
+
+    for i, (_, phonemes) in enumerate(text_features.word_phoneme_mapping):
+
+        for _ in phonemes:
+            wd_pos.append(i / (len(text_features.word_phoneme_mapping) - 1))
+
+    wd_num = []
+
+    for _, phonemes in text_features.word_phoneme_mapping:
+
+        wd_num.extend([len(text_features.word_phoneme_mapping)] * len(phonemes))
+
+    return torch.tensor([ph_pos, ph_num, wd_pos, wd_num], dtype=torch.float32).T
 
 
 @dataclasses.dataclass
@@ -131,6 +175,11 @@ class TextProcessor:
 
     _PHONEME_PAUSE_TOKENS = ('<short_pause>', '<medium_pause>', '<long_pause>')
 
+    _NLTK_POS_TAGS = ('LS', 'TO', 'VBN', 'WP', 'UH', 'VBG', 'JJ', 'VBZ', 'VBP', 'NN', 'DT', 'PRP',
+                      'WP$', 'NNPS', 'PRP$', 'WDT', 'RB', 'RBR', 'RBS', 'VBD', 'IN', 'FW', 'RP',
+                      'JJR', 'JJS', 'PDT', 'MD', 'VB', 'WRB', 'NNP', 'EX', 'NNS', 'SYM', 'CC',
+                      'CD', 'POS')
+
     SUPPORTED_PHONEMES = _PHONEME_PAUSE_TOKENS + _GRUUT_PHONEMES
 
     allowed_chars = (
@@ -151,9 +200,15 @@ class TextProcessor:
         self._pretrained_bert_id = 'microsoft/deberta-v2-xxlarge'
         self._tokenizer = DebertaV2Tokenizer.from_pretrained(self._pretrained_bert_id)
         self._deberta_embedder: Optional[DebertaV2Model] = None
+
         self._phoneme_to_id = {p: i for i, p in enumerate(self.SUPPORTED_PHONEMES, start=1)}
+        self._pos_to_id = {t: i for i, t in enumerate(self._NLTK_POS_TAGS, start=1)}
+
         self._bert_device = bert_device
         self._max_sentences_in_batch = 16
+
+        nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -217,6 +272,21 @@ class TextProcessor:
             words=words,
             word_phoneme_mapping=word_phoneme_mapping,
             word_bert_mapping=word_bert_mapping)
+    
+    def obtain_pos_tags(self, text_features: TextFeatures) -> List[int]:
+        """Returns a sequence of POS tag IDs for the words in the text."""
+
+        pos_tags = nltk.pos_tag(text_features.words, lang='eng')
+        pos_tags = [tag for _, tag in pos_tags]
+
+        try:
+            pos_ids = [self._pos_to_id[tag] for tag in pos_tags]
+
+        except KeyError:
+            _logger().critical('Unsupported POS tag found in the text: %s', pos_tags)
+            sys.exit(1)
+
+        return pos_ids
 
     def obtain_bert_embeddings(self, bert_tokens: List[str]) -> torch.Tensor:
         """Obtains BERT embeddings for the given BERT tokens."""
@@ -296,18 +366,18 @@ class TextProcessor:
 
         return [outputs[i][1:len(tokenized_sentence) + 1]
                 for i, tokenized_sentence in enumerate(tokenized_sentences)]
-    
+
     def _run_bert_in_batches(self,
                              input_ids: List[List[int]],
                              attention_mask: List[List[int]],
                              token_type_ids: Optional[List[List[int]]] = None) -> torch.Tensor:
-        
+
         outputs: List[torch.Tensor] = []
 
         for i in range(0, len(input_ids), self._max_sentences_in_batch):
             batch_input_ids = input_ids[i:i + self._max_sentences_in_batch]
             batch_attention_mask = attention_mask[i:i + self._max_sentences_in_batch]
-            
+
             if token_type_ids is not None:
                 batch_token_type_ids = token_type_ids[i:i + self._max_sentences_in_batch]
             else:
@@ -324,7 +394,6 @@ class TextProcessor:
                 outputs.append(batch_outputs)
 
         return torch.cat(outputs, dim=0)
-
 
     def _get_embedder(self) -> DebertaV2Model:
         """Returns lazy-initialized DeBERTa embedder."""
