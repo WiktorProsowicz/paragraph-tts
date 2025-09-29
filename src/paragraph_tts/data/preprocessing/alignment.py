@@ -41,8 +41,10 @@ def spans_to_pool_matrix(spans: np.ndarray) -> np.ndarray:
     total_length = np.sum(spans)
     large_to_small_mapping = spans_to_indices_of_smaller_seq(spans)
 
+    mat_value = (1.0 / spans + 1e-6) * (spans > 0).astype(np.float32)
+
     pool_matrix = np.zeros((total_length, len(spans)), dtype=np.float32)
-    pool_matrix[np.arange(total_length), large_to_small_mapping] = np.repeat(1.0 / spans, spans)
+    pool_matrix[np.arange(total_length), large_to_small_mapping] = np.repeat(mat_value, spans)
 
     return pool_matrix
 
