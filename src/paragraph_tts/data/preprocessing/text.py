@@ -96,10 +96,13 @@ def obtain_ling_stats(text_features: TextFeatures) -> torch.Tensor:
 
     wd_pos = []
 
-    for i, (_, phonemes) in enumerate(text_features.word_phoneme_mapping):
+    if len(text_features.word_phoneme_mapping) == 1:
+        wd_pos.extend([0.0] * len(text_features.get_phoneme_sequence()))
 
-        for _ in phonemes:
-            wd_pos.append(i / (len(text_features.word_phoneme_mapping) - 1))
+    else:
+        for i, (_, phonemes) in enumerate(text_features.word_phoneme_mapping):
+            for _ in phonemes:
+                wd_pos.append(i / (len(text_features.word_phoneme_mapping) - 1))
 
     wd_num = []
 
