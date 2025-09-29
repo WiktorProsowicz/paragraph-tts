@@ -84,7 +84,7 @@ def obtain_ling_stats(text_features: TextFeatures) -> torch.Tensor:
         if len(phonemes) == 1:
             ph_pos.append(0.0)
             continue
-        
+
         for i in range(len(phonemes)):
             ph_pos.append(i / (len(phonemes) - 1))
 
@@ -342,8 +342,7 @@ class TextProcessor:
         attention_mask = [[1] * len(tokens) + [0] * (max_length - len(tokens))
                           for tokens in input_tokens]
 
-        with torch.no_grad():
-            outputs = self._run_bert_in_batches(input_ids, attention_mask, token_type_ids)
+        outputs = self._run_bert_in_batches(input_ids, attention_mask, token_type_ids)
 
         return [outputs[i, 0] for i in range(len(sentences) - 1)]
 
@@ -361,8 +360,7 @@ class TextProcessor:
         attention_mask = [[1] * len(tokens) + [0] * (max_length - len(tokens))
                           for tokens in input_tokens]
 
-        with torch.no_grad():
-            outputs = self._run_bert_in_batches(input_ids, attention_mask)
+        outputs = self._run_bert_in_batches(input_ids, attention_mask)
 
         return [outputs[i][1:len(tokenized_sentence) + 1]
                 for i, tokenized_sentence in enumerate(tokenized_sentences)]
