@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
 """Contains classes for processing/reading LibriTTS-R dataset."""
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any
 import logging
 import os
 import dataclasses
 
 import numpy as np
 import torch
-import tqdm  # type: ignore
-from comp_trans_tts import (deepspeaker)  # type: ignore
+from comp_trans_tts import deepspeaker  # type: ignore
 from sklearn.preprocessing import StandardScaler
 import json
 
-from paragraph_tts import data
 from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
-from paragraph_tts.utils.path.enriched_context_dir_handler import EnrichedContextDirHandler
+from paragraph_tts.utils.path.enriched_context_dir_handler import (EnrichedContextDirHandler,
+                                                                   ContextForUtterance)
 from paragraph_tts.data.preprocessing import alignment as alignment_prep
 from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.data.preprocessing import audio as audio_prep
@@ -35,7 +34,7 @@ class SampleFilterCfg:
     max_words_in_utterance: int
     # Minimum number of words in utterance (either the input utterance or context sentences).
     min_words_in_utterance: int
-    # Whether to allow processing input utterances that are fragments of sentences. 
+    # Whether to allow processing input utterances that are fragments of sentences.
     allow_fragmented_sentences: bool
     # Maximum number of sentences in paragraph (context).
     max_paragraph_length: int
@@ -157,6 +156,14 @@ class LibriTTSRPreprocessor:
 
             self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
                                              os.path.join(context_embeddings_dir, 'original'))
+            
+            paragraph_metadata = {
+                'length': len(original_paragraph.sentences),
+            }
+
+            with open(os.path.join(context_embeddings_dir, 'original', 'metadata.json'),
+                      'w', encoding='utf-8') as f:
+                json.dump(paragraph_metadata, f, indent=4)
 
         for utt_info in utterances_to_process:
 
@@ -261,6 +268,23 @@ class LibriTTSRPreprocessor:
                         os.path.join(context_embeddings_dir,
                                      f'enriched_{utt_info.utt_id}_{context_idx}')
                     )
+
+                    self._save_enriched_context_metadata(
+                        context,
+                        os.path.join(context_embeddings_dir,
+                                     f'enriched_{utt_info.utt_id}_{context_idx}')
+                    )
+
+    def _save_enriched_context_metadata(self,
+                                        context: ContextForUtterance,
+                                        output_dir: str):
+        metadata = {
+            'n_preceding_sentences': len(context.preceding_sentences),
+            'n_following_sentences': len(context.following_sentences),
+        }
+
+        with open(os.path.join(output_dir, 'metadata.json'), 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=4)
 
     def _obtain_input_for_utterance(self,
                                     utt_info: raw_libri_dir_handler.UtteranceInfo
