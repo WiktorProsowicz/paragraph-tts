@@ -17,25 +17,6 @@ def _logger():
     return logging.getLogger(__name__)
 
 
-class ProcessedLibriDirHandler:
-    """Manages access to content inside directory with processed LibriTTS-R ds."""
-
-    def __init__(self, ds_path: str):
-        """
-        Args:
-            ds_path: Path to processed ds.
-        """
-
-        os.makedirs(ds_path, exist_ok=True)
-
-        self._metadata_path = os.path.join(ds_path, 'metadata.json')
-
-    @property
-    def metadata_path(self):
-        """Returns path to a json file containing dataset's metadata."""
-        return self._metadata_path
-
-
 @dataclasses.dataclass
 class UtteranceInfo:
     """Contains information about an utterance."""
