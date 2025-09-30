@@ -3,3 +3,4 @@
 from . import eda
 from . import preprocessing
 from . import processor
+from . import loading
