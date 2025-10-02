@@ -12,7 +12,6 @@ build_external_repos onnxrt="cpu":
     #!/usr/bin/env bash
     echo "Installing dependencies..."
     source .venv/bin/activate
-    pip install -e extern/torch-dev-utils
     pip install -e extern/Comprehensive-Transformer-TTS[$1]
 
 # Install project with its deps into the virtual environment.

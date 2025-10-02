@@ -1,6 +1,3 @@
 [submodule "extern/Comprehensive-Transformer-TTS"]
 	path = extern/Comprehensive-Transformer-TTS
 	url = git@github.com:WiktorProsowicz/Comprehensive-Transformer-TTS.git
-[submodule "extern/torch-dev-utils"]
-	path = extern/torch-dev-utils
-	url = https://github.com/WiktorProsowicz/torch-dev-utils
