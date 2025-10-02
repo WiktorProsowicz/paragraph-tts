@@ -159,7 +159,7 @@ class LibriTTSRPreprocessor:
 
             self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
                                              os.path.join(context_embeddings_dir, 'original'))
-            
+
             paragraph_metadata = {
                 'length': len(original_paragraph.sentences),
             }
@@ -350,16 +350,16 @@ class LibriTTSRPreprocessor:
 
     def _save_normalization_stats_for_speaker(self, spk_id: int):
 
+        self._save_norm_stats(spk_id, 'f0')
+        self._save_norm_stats(spk_id, 'energy')
+
+    def _save_norm_stats(self,
+                         spk_id: int,
+                         contour_file_name: str):
+
         speaker_path = os.path.join(self._output_path,
                                     'samples',
                                     str(spk_id))
-
-        self._save_norm_stats(speaker_path, 'f0')
-        self._save_norm_stats(speaker_path, 'energy')
-
-    def _save_norm_stats(self,
-                            speaker_path: str,
-                            contour_file_name: str):
 
         scaler = StandardScaler()
 
@@ -375,13 +375,16 @@ class LibriTTSRPreprocessor:
                 contour = torch.load(contour_path).numpy().reshape(-1, 1)
                 scaler.partial_fit(contour)
 
-        stats_path = os.path.join(speaker_path, f'{contour_file_name}_stats.pt')
-        
+        stats_path = os.path.join(self._output_path,
+                                  'speaker_num_stats',
+                                  str(spk_id))
+
+        os.makedirs(stats_path, exist_ok=True)
+
         torch.save({
             'mean': torch.tensor(scaler.mean_, dtype=torch.float),
             'std': torch.tensor(np.sqrt(scaler.var_), dtype=torch.float)
-        }, stats_path)
-                                  
+        }, os.path.join(stats_path, f'{contour_file_name}_stats.pt'))
 
     def _prepare_context_embeddings(self,
                                     context_sentences: List[str],
