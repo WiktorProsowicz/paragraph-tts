@@ -104,7 +104,7 @@ class LibriTTSRPreprocessor:
         if os.path.exists(os.path.join(self._output_path, 'samples', str(speaker_id))):
             _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
 
-            self._normalize_contours_for_speaker(speaker_id)
+            self._save_normalization_stats_for_speaker(speaker_id)
 
     def save_metadata(self, metadata: Dict[str, Any]):
         """Saves dataset metadata to output path."""
@@ -348,16 +348,16 @@ class LibriTTSRPreprocessor:
             'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float)
         }
 
-    def _normalize_contours_for_speaker(self, spk_id: int):
+    def _save_normalization_stats_for_speaker(self, spk_id: int):
 
         speaker_path = os.path.join(self._output_path,
                                     'samples',
                                     str(spk_id))
 
-        self._normalize_contours(speaker_path, 'f0')
-        self._normalize_contours(speaker_path, 'energy')
+        self._save_norm_stats(speaker_path, 'f0')
+        self._save_norm_stats(speaker_path, 'energy')
 
-    def _normalize_contours(self,
+    def _save_norm_stats(self,
                             speaker_path: str,
                             contour_file_name: str):
 
@@ -375,18 +375,13 @@ class LibriTTSRPreprocessor:
                 contour = torch.load(contour_path).numpy().reshape(-1, 1)
                 scaler.partial_fit(contour)
 
-        for para_dir in os.listdir(speaker_path):
-            for utt_dir in os.listdir(os.path.join(speaker_path, para_dir, 'input_data')):
-
-                contour_path = os.path.join(speaker_path,
-                                            para_dir,
-                                            'input_data',
-                                            utt_dir,
-                                            f'{contour_file_name}.pt')
-
-            contour = torch.load(contour_path).numpy().reshape(-1, 1)
-            normalized_contour = scaler.transform(contour).squeeze()
-            torch.save(torch.tensor(normalized_contour, dtype=torch.float), contour_path)
+        stats_path = os.path.join(speaker_path, f'{contour_file_name}_stats.pt')
+        
+        torch.save({
+            'mean': torch.tensor(scaler.mean_, dtype=torch.float),
+            'std': torch.tensor(np.sqrt(scaler.var_), dtype=torch.float)
+        }, stats_path)
+                                  
 
     def _prepare_context_embeddings(self,
                                     context_sentences: List[str],
