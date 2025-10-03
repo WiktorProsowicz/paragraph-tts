@@ -14,9 +14,25 @@ from paragraph_tts.utils.path import processed_libri_dir_handler
 class _DataSet(torch.utils.data.Dataset):
     """Loads serialized data from disk."""
 
-    def __init__(self, samples: List[processed_libri_dir_handler.SampleInfo]):
+    def __init__(self,
+                 processed_dir_handler: processed_libri_dir_handler.ProcessedLibriDirHandler,
+                 samples: List[processed_libri_dir_handler.SampleInfo],
+                 n_pitch_bins: int,
+                 pitch_bounds: Tuple[float, float],
+                 n_energy_bins: int,
+                 energy_bounds: Tuple[float, float]):
 
         self._samples = samples
+        self._processed_dir_handler = processed_dir_handler
+        self._n_pitch_bins = n_pitch_bins
+        self._min_pitch, self._max_pitch = pitch_bounds
+        self._n_energy_bins = n_energy_bins
+        self._min_energy, self._max_energy = energy_bounds
+
+        self._f0_possible_values = torch.linspace(
+            self._min_pitch, self._max_pitch, self._n_pitch_bins)
+        self._energy_possible_values = torch.linspace(
+            self._min_energy, self._max_energy, self._n_energy_bins)
 
     def __len__(self):
         return len(self._samples)
@@ -35,6 +51,25 @@ class _DataSet(torch.utils.data.Dataset):
         context_token_emb = torch.load(context.token_embeddings_path)
         context_token_lengths = [embs.shape[0] for embs in context_token_emb]
         context_token_pse = torch.load(context.pse_path)
+
+        num_stats = self._processed_dir_handler.get_numerical_stats(sample.spk_id)
+
+        f0_stats = torch.load(num_stats.f0_stats_pth)
+        mean_f0, std_f0 = f0_stats['mean'], f0_stats['std']
+        energy_stats = torch.load(num_stats.energy_stats_pth)
+        mean_energy, std_energy = energy_stats['mean'], energy_stats['std']
+
+        f0 = self._scale_and_quantize(
+            torch.load(sample.input_data.f0_pth),
+            mean_f0, std_f0,
+            self._f0_possible_values
+        )
+
+        energy = self._scale_and_quantize(
+            torch.load(sample.input_data.energy_pth),
+            mean_energy, std_energy,
+            self._energy_possible_values
+        )
 
         return {
             'spk_emb': torch.load(sample.spk_embedding_path),
@@ -56,8 +91,7 @@ class _DataSet(torch.utils.data.Dataset):
             'spk_rate': speaking_rate
         }
 
-    @staticmethod
-    def collate_fn(batch_samples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def collate_fn(self, batch_samples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Composes a padded batch from list of samples."""
 
         batch = {}
@@ -95,6 +129,9 @@ class _DataSet(torch.utils.data.Dataset):
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0)
 
+        batch['pitch_possible_values'] = self._f0_possible_values
+        batch['energy_possible_values'] = self._energy_possible_values
+
         return batch
 
 
@@ -106,12 +143,22 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                  batch_size: int,
                  num_workers: int,
                  num_test_samples: int,
-                 train_val_split: float):
+                 train_val_split: float,
+                 n_pitch_bins: int,
+                 pitch_bounds: Tuple[float, float],
+                 n_energy_bins: int,
+                 energy_bounds: Tuple[float, float]):
         """
         Args:
             ds_path: Path to processed dataset.
             batch_size: Batch size.
             num_workers: Number of workers for data loading.
+            num_test_samples: Number of samples in test set.
+            train_val_split: Percentage of training samples in train+val split.
+            n_pitch_bins: Number of bins for pitch quantization.
+            pitch_bounds: Min and max values for pitch quantization.
+            n_energy_bins: Number of bins for energy quantization.
+            energy_bounds: Min and max values for energy quantization.
         """
 
         super().__init__()
@@ -127,6 +174,11 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
         self._val_set: Optional[torch.utils.data.Dataset] = None
         self._test_set: Optional[torch.utils.data.Dataset] = None
 
+        self._n_pitch_bins = n_pitch_bins
+        self._pitch_bounds = pitch_bounds
+        self._n_energy_bins = n_energy_bins
+        self._energy_bounds = energy_bounds
+
     def setup(self, _: str):
 
         rng = np.random.RandomState(2137)  # pylint: disable=no-member
@@ -135,11 +187,18 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
         test_samples = rng.choice(all_samples, size=100, replace=False)  # type: ignore
         train_val_samples = [s for s in all_samples if s not in test_samples]
 
-        self._test_set = _DataSet(list(test_samples))
+        self._test_set = _DataSet(self._ds_path_handler,
+                                  list(test_samples),
+                                  self._n_pitch_bins, self._pitch_bounds,
+                                  self._n_energy_bins, self._energy_bounds)
 
         generator = torch.Generator().manual_seed(2137)
         percentages = [self._train_val_split, 1 - self._train_val_split]
-        self._train_set, self._val_set = torch.utils.data.random_split(_DataSet(train_val_samples),
+        train_val_ds = _DataSet(self._ds_path_handler,
+                                train_val_samples,
+                                self._n_pitch_bins, self._pitch_bounds,
+                                self._n_energy_bins, self._energy_bounds)
+        self._train_set, self._val_set = torch.utils.data.random_split(train_val_ds,
                                                                        percentages,
                                                                        generator=generator)
 

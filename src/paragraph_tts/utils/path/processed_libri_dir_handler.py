@@ -77,6 +77,12 @@ class UtteranceDataInfo:
 
 
 @dataclasses.dataclass
+class SpeakerNumericalStats:
+
+    f0_stats_pth: str
+    energy_stats_pth: str
+
+@dataclasses.dataclass
 class SampleInfo:
     """Contains information about a sample in processed dataset."""
 
@@ -103,6 +109,7 @@ class ProcessedLibriDirHandler:
 
         self._metadata_path = os.path.join(ds_path, 'metadata.json')
         self._samples_path = os.path.join(ds_path, 'samples')
+        self._num_stats_path = os.path.join(ds_path, 'speaker_num_stats')
         self._spk_embeddings_path = os.path.join(ds_path, 'spk_embeddings')
 
     def get_metadata(self):
@@ -147,6 +154,22 @@ class ProcessedLibriDirHandler:
                         input_data=self._obtain_utterance_data_info(input_data_path),
                         spk_embedding_path=os.path.join(self._spk_embeddings_path, f'{spk_id}.pt')
                     )
+
+    def get_numerical_stats(self, spk_id: int) -> SpeakerNumericalStats:
+        """Returns paths to speaker-specific numerical stats."""
+
+        f0_stats_pth = os.path.join(self._num_stats_path, str(spk_id), 'f0_stats.pt')
+        energy_stats_pth = os.path.join(self._num_stats_path, str(spk_id), 'energy_stats.pt')
+
+        for path in [f0_stats_pth, energy_stats_pth]:
+            if not os.path.exists(path):
+                _logger().critical('Path %s does not exist!', path)
+                sys.exit(1)
+
+        return SpeakerNumericalStats(
+            f0_stats_pth=f0_stats_pth,
+            energy_stats_pth=energy_stats_pth
+        )
 
     def _obtain_contexts_for_utterance(self,
                                        contexts_path: str,
