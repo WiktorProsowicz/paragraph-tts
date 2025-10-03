@@ -2,6 +2,7 @@
 
 from fast_transformers.attention import linear_attention
 from fast_transformers.feature_maps import fourier_features
+import matplotlib.pyplot as plt
 
 import torch
 
@@ -14,14 +15,18 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
                  num_heads: int,
                  feature_map_dim: int):
 
-        super().__init__(feature_map_dim, fourier_features.Favor)
-
         assert d_model % num_heads == 0, "d_model % num_heads should be zero."
 
+        def feature_map_factory(query_dims):
+            return fourier_features.Favor(query_dims, feature_map_dim)
+
+        super().__init__(d_model // num_heads, feature_map_factory)
+
         self._head_size = d_model // num_heads
+        self._feature_map_dim = feature_map_dim
 
         self._permutation = self._generate_permutation_sequence(num_heads,
-                                                                d_model // num_heads,
+                                                                feature_map_dim,
                                                                 max_seq_length=5000,
                                                                 seed=2137)
 
@@ -78,16 +83,16 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
 
         out = out.reshape(batch_size, query_len, -1)
 
-        return self.out_proj(out)
+        return self._out_proj(out)
 
-    def _generate_permutation_sequence(self, n_heads, head_size, max_seq_length, seed):
+    def _generate_permutation_sequence(self, n_heads, feature_map_dim, max_seq_length, seed):
 
         rng = torch.Generator().manual_seed(seed)
 
-        perm = [torch.randperm(head_size, generator=rng) for _ in range(n_heads)]
+        perm = [torch.randperm(feature_map_dim, generator=rng) for _ in range(n_heads)]
         perm = torch.stack(perm, dim=0)
 
-        expanded_perm = [torch.arange(head_size).unsqueeze(0).expand(n_heads, -1)]
+        expanded_perm = [torch.arange(feature_map_dim).unsqueeze(0).expand(n_heads, -1)]
 
         for _ in range(max_seq_length - 1):
             prev = expanded_perm[-1]

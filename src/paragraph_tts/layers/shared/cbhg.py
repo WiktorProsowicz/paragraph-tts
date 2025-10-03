@@ -14,7 +14,13 @@ import torch.nn as nn
 class BatchNormConv1d(nn.Module):
     def __init__(self, in_size, out_size, kernel_size, stride, padding, activation=None):
         super(BatchNormConv1d, self).__init__()
-        self.conv1d = nn.Conv1d(in_size, out_size, kernel_size=kernel_size, stride=stride, padding=padding, bias=False)
+        self.conv1d = nn.Conv1d(
+            in_size,
+            out_size,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=False)
         self.bn = nn.BatchNorm1d(out_size, momentum=0.99, eps=1e-3)
         self.activation = activation
 
@@ -24,6 +30,7 @@ class BatchNormConv1d(nn.Module):
             x = self.activation(x)
         x = self.bn(x)
         return x
+
 
 class Highway(nn.Module):
     def __init__(self, in_size, out_size):
@@ -42,8 +49,9 @@ class Highway(nn.Module):
         y = H * T + x * C
         return y
 
+
 class CBHG(nn.Module):
-    
+
     def __init__(self, in_dim, K=16, hidden_sizes=[128, 128]):
         super(CBHG, self).__init__()
         self.in_dim = in_dim
@@ -69,9 +77,9 @@ class CBHG(nn.Module):
 
     def forward(self, inputs, input_lengths=None):
         x = inputs
-        
+
         assert x.size(-1) == self.in_dim
-        
+
         x = x.transpose(1, 2)
         T = x.size(-1)
 
@@ -88,7 +96,7 @@ class CBHG(nn.Module):
             x = conv1d(x)
 
         x = x.transpose(1, 2)
-        
+
         x = self.pre_highway_proj(x)
 
         x += inputs
@@ -98,7 +106,7 @@ class CBHG(nn.Module):
         if input_lengths is not None:
             x = nn.utils.rnn.pack_padded_sequence(
                 x, input_lengths, batch_first=True, enforce_sorted=False)
-        
+
         y, _ = self.gru(x)
 
         if input_lengths is not None:
