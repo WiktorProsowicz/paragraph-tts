@@ -175,6 +175,9 @@ class LibriTTSRPreprocessor:
 
     def _should_process_utterance(self, utt_info: raw_libri_dir_handler.UtteranceInfo) -> bool:
 
+        if not self._alignments_path_hand.has_alignment_for(utt_info):
+            return False
+
         text = self._text_processor.load_text(utt_info.text_path)
         text = self._text_processor.clean_text(text)
 

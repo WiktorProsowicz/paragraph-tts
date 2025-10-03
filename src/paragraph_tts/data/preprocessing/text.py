@@ -275,21 +275,20 @@ class TextProcessor:
             words=words,
             word_phoneme_mapping=word_phoneme_mapping,
             word_bert_mapping=word_bert_mapping)
-    
+
     def obtain_pos_tags(self, text_features: TextFeatures) -> List[int]:
         """Returns a sequence of POS tag IDs for the words in the text."""
 
-        pos_tags = nltk.pos_tag(text_features.words, lang='eng')
-        pos_tags = [tag for _, tag in pos_tags]
+        pos_tags_with_words = nltk.pos_tag(text_features.words, lang='eng')
+        pos_tags = [tag for _, tag in pos_tags_with_words]
 
         try:
-            pos_ids = [self._pos_to_id[tag] for tag in pos_tags]
+            return [self._pos_to_id[tag] for tag in pos_tags]
 
         except KeyError:
-            _logger().critical('Unsupported POS tag found in the text: %s', pos_tags)
-            sys.exit(1)
+            _logger().warning('Unsupported POS tag found in tags: %s', pos_tags_with_words)
 
-        return pos_ids
+        return [self._pos_to_id.get(tag, 0) for tag in pos_tags]
 
     def obtain_bert_embeddings(self, bert_tokens: List[str]) -> torch.Tensor:
         """Obtains BERT embeddings for the given BERT tokens."""
