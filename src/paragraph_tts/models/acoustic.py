@@ -136,8 +136,17 @@ class AcousticModel(pl.LightningModule):
     def training_step(self,
                       batch: Dict[str, torch.Tensor],
                       batch_idx: int):
+        """Performs training step."""
 
-        pass
+        model_output = self.forward(batch, use_teacher_forcing=True)
+
+        losses = self._calculate_losses(model_output, batch)
+
+        for loss_name, loss_t in losses.items():
+            self.log(f'train/{loss_name}', loss_t.item(), on_step=True, on_epoch=False)
+
+        return sum(losses.values()) 
+        
 
     def _calculate_losses(self,
                           model_output: Dict[str, torch.Tensor],
@@ -151,3 +160,54 @@ class AcousticModel(pl.LightningModule):
         spec_mask = spec_mask.unsqueeze(1).expand_as(mel_loss)
 
         mel_loss = (mel_loss * spec_mask).sum() / spec_mask.sum()
+
+        losses = {
+            'mel_loss': mel_loss
+        }
+
+        teacher_forcing_outputs = (
+            'attn_soft', 'attn_hard', 'attn_logprob', 'duration_rounded',
+            'target_pitch_quant', 'target_energy_quant'
+        )
+
+        if any(el in model_output for el in teacher_forcing_outputs):
+
+            assert all(el in model_output for el in teacher_forcing_outputs)
+
+            ctc_loss = ctt_loss.ForwardSumLoss()(attn_logprob=model_output['attn_logprob'],
+                                                 in_lens=batch['input_phonemes_length'],
+                                                 out_lens=batch['input_spec_length'])
+
+            losses['ctc_loss'] = ctc_loss
+
+            train_step = self.trainer.global_step
+
+            if train_step > self._train_cfg['binarize_alignment_start_step']:
+                bin_loss_weight = 0.0
+
+            else:
+                bin_warmup_steps = self._train_cfg['binarization_loss_warmup_steps']
+                bin_loss_weight = min((train_step - bin_warmup_steps) / bin_warmup_steps, 1.0)
+
+            bin_loss = ctt_loss.BinLoss()(hard_attention=model_output['attn_hard'],
+                                          soft_attention=model_output['attn_soft'])
+            bin_loss *= bin_loss_weight
+            losses['bin_loss'] = bin_loss
+
+            prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
+
+            pitch_pred_loss = torch.nn.L1Loss(reduction='none')(
+                model_output['predicted_pitch_quant'],
+                model_output['target_pitch_quant']
+            )
+            pitch_pred_loss = (pitch_pred_loss * prosody_mask).sum() / prosody_mask.sum()
+            losses['pitch_pred_loss'] = pitch_pred_loss
+
+            energy_pred_loss = torch.nn.L1Loss(reduction='none')(
+                model_output['predicted_energy_quant'],
+                model_output['target_energy_quant']
+            )
+            energy_pred_loss = (energy_pred_loss * prosody_mask).sum() / prosody_mask.sum()
+            losses['energy_pred_loss'] = energy_pred_loss
+
+        return losses
