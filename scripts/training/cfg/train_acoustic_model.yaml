@@ -1,0 +1,3 @@
+train_cfg:
+    binarize_alignment_start_step: 10000
+    

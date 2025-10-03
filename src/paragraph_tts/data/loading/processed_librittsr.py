@@ -1,7 +1,7 @@
 """Contains processed LibriTTS-R dataset loader."""
 
 import torch
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import random
 import numpy as np
 from typing import Optional
@@ -37,6 +37,17 @@ class _DataSet(torch.utils.data.Dataset):
     def __len__(self):
         return len(self._samples)
 
+    def _scale_and_quantize(self,
+                            values: torch.Tensor,
+                            mean: torch.Tensor,
+                            std: torch.Tensor,
+                            possible_values) -> torch.Tensor:
+
+        values_norm = (values - mean) / std
+
+        indices = torch.bucketize(values_norm, possible_values, right=True)
+        return possible_values[indices - 1]
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
 
         sample = self._samples[idx]
@@ -44,13 +55,16 @@ class _DataSet(torch.utils.data.Dataset):
         context = random.choice(sample.contexts)
 
         phoneme_ids = torch.load(sample.input_data.phoneme_ids_pth)
+        phoneme_lengths = torch.tensor(phoneme_ids.shape[0], dtype=torch.long)
         spec = torch.load(sample.input_data.spec_pth)
+        spec_length = torch.tensor(spec.shape[1], dtype=torch.long)
 
         speaking_rate = torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float)
 
         context_token_emb = torch.load(context.token_embeddings_path)
         context_token_lengths = [embs.shape[0] for embs in context_token_emb]
         context_token_pse = torch.load(context.pse_path)
+        context_pse_length = torch.tensor(len(context_token_pse), dtype=torch.long)
 
         num_stats = self._processed_dir_handler.get_numerical_stats(sample.spk_id)
 
@@ -74,13 +88,16 @@ class _DataSet(torch.utils.data.Dataset):
         return {
             'spk_emb': torch.load(sample.spk_embedding_path),
             'context_token_emb': torch.cat(context_token_emb, dim=0),
-            'context_token_lengths': torch.tensor(context_token_lengths, dtype=torch.long),
+            'context_tokens_length': torch.tensor(context_token_lengths, dtype=torch.long),
             'context_pse': torch.stack(context_token_pse, dim=0),
+            'context_pse_length': context_pse_length,
             'input_token_emb': torch.load(sample.input_data.bert_embeddings_pth),
             'input_phoneme_ids': phoneme_ids,
+            'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
-            'input_f0': torch.load(sample.input_data.f0_pth),
-            'input_energy': torch.load(sample.input_data.energy_pth),
+            'input_spec_length': spec_length,
+            'input_f0': f0,
+            'input_energy': energy,
             'input_ling_stats': torch.load(sample.input_data.ling_stats_pth),
             'input_pos_tags': torch.load(sample.input_data.pos_tags_pth),
             'bert_to_word_pool_matrix': torch.load(sample.input_data.bert_to_word_pool_matrix_pth),
@@ -118,13 +135,14 @@ class _DataSet(torch.utils.data.Dataset):
             batch[key] = torch.stack(padded_matrices, dim=0)
 
         for key in ['context_token_emb', 'context_pse', 'input_token_emb', 'input_f0',
-                    'input_energy', 'input_ling_stats']:
+                    'input_energy', 'input_ling_stats', 'spk_rate']:
 
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0.0)
 
-        for key in ['context_token_lengths', 'input_phoneme_ids', 'input_pos_tags',
-                    'phone_to_spec_indices', 'word_to_phoneme_indices']:
+        for key in ['context_tokens_length', 'input_phoneme_ids', 'input_pos_tags',
+                    'phone_to_spec_indices', 'word_to_phoneme_indices', 'input_phonemes_length',
+                    'context_pse_length', 'input_spec_length', 'sentence_pos']:
 
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0)
