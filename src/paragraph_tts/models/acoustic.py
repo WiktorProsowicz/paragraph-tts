@@ -125,7 +125,7 @@ class AcousticModel(pl.LightningModule):
 
         pred_mel_spec = self._decoder(
             var_adaptor_output['output'],
-            mel_length=mel_length
+            mel_length
         )
 
         return {
@@ -133,9 +133,8 @@ class AcousticModel(pl.LightningModule):
             **var_adaptor_output
         }
 
-    def training_step(self,
-                      batch: Dict[str, torch.Tensor],
-                      batch_idx: int):
+    def training_step(self, # pylint: disable=arguments-differ
+                      batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
 
         model_output = self.forward(batch, use_teacher_forcing=True)
@@ -143,10 +142,28 @@ class AcousticModel(pl.LightningModule):
         losses = self._calculate_losses(model_output, batch)
 
         for loss_name, loss_t in losses.items():
-            self.log(f'train/{loss_name}', loss_t.item(), on_step=True, on_epoch=False)
+            self.log(f'train/{loss_name}',
+                     loss_t.item(),
+                     on_step=True,
+                     on_epoch=False,
+                     batch_size=self._train_cfg['batch_size'])
 
-        return sum(losses.values()) 
-        
+        return sum(losses.values())
+
+    def validation_step(self, # pylint: disable=arguments-differ
+                        batch: Dict[str, torch.Tensor]) -> None:
+        """Performs validation step."""
+
+        model_output = self.forward(batch, use_teacher_forcing=True)
+
+        losses = self._calculate_losses(model_output, batch)
+
+        for loss_name, loss_t in losses.items():
+            self.log(f'val/{loss_name}',
+                     loss_t.item(),
+                     on_step=False,
+                     on_epoch=True,
+                     batch_size=self._train_cfg['batch_size'])
 
     def _calculate_losses(self,
                           model_output: Dict[str, torch.Tensor],

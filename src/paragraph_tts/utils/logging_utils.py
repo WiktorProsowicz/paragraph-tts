@@ -6,6 +6,7 @@ import os
 import pathlib
 from typing import Any
 from typing import Dict
+from typing import List
 
 import yaml  # type: ignore
 
@@ -13,7 +14,8 @@ UTILITIES_HOME = pathlib.Path(__file__).absolute().parent.as_posix()
 LOGGING_CONFIG_PATH = os.path.join(UTILITIES_HOME, 'res', 'logging_cfg.yaml')
 
 
-def setup_logging(script_signature: str) -> None:
+def setup_logging(script_signature: str,
+                  output_dir: str = 'log') -> None:
     """Sets up project-wide logging configuration.
 
     This function should be called at the
@@ -24,14 +26,14 @@ def setup_logging(script_signature: str) -> None:
             determine the log file name.
     """
 
-    logging_config = _get_logging_config(script_signature)
+    logging_config = _get_logging_config(script_signature, output_dir)
 
-    os.makedirs(f'log/{script_signature}/', exist_ok=True)
+    os.makedirs(os.path.join(output_dir, script_signature), exist_ok=True)
 
     logging.config.dictConfig(logging_config)
 
 
-def _get_logging_config(script_signature: str) -> Dict[str, Any]:
+def _get_logging_config(script_signature: str, output_dir: str) -> Dict[str, Any]:
     """Creates a global logging configuration.
 
     Returns:
@@ -49,7 +51,8 @@ def _get_logging_config(script_signature: str) -> Dict[str, Any]:
             formatter['()'] = custom_formatters[formatter['()']]
 
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    config_dict['handlers']['file_hand']['filename'] = f'log/{script_signature}/{timestamp}.log'
+    out_file_path = f'{output_dir}/{script_signature}/{timestamp}.log'
+    config_dict['handlers']['file_hand']['filename'] = out_file_path
 
     return config_dict
 

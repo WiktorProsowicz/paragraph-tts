@@ -21,7 +21,8 @@ dependencies = [
     "ollama>=0.5.4",
     "lightning>=2.5.5",
     "speechbrain>=1.0.3",
-    "pytorch-fast-transformers>=0.4.0"
+    "pytorch-fast-transformers>=0.4.0",
+    "mlflow>=3.4.0"
 ]
 
 [project.optional-dependencies]

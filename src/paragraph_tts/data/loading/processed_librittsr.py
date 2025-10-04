@@ -198,21 +198,19 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
         self._num_test_samples = num_test_samples
         self._train_val_split = train_val_split
 
-        self._train_set: Optional[torch.utils.data.Dataset] = None
-        self._val_set: Optional[torch.utils.data.Dataset] = None
-        self._test_set: Optional[torch.utils.data.Dataset] = None
+        self._train_set: Optional[_DataSet] = None
+        self._val_set: Optional[_DataSet] = None
+        self._test_set: Optional[_DataSet] = None
 
         self._n_pitch_bins = n_pitch_bins
         self._pitch_bounds = pitch_bounds
         self._n_energy_bins = n_energy_bins
         self._energy_bounds = energy_bounds
 
-    def setup(self, _: str):
-
-        rng = np.random.RandomState(2137)  # pylint: disable=no-member
+    def setup(self, stage: str):
 
         all_samples = list(self._ds_path_handler.iter_samples())
-        test_samples = rng.choice(all_samples, size=100, replace=False)  # type: ignore
+        test_samples = np.random.choice(all_samples, size=100, replace=False)  # type: ignore
         train_val_samples = [s for s in all_samples if s not in test_samples]
 
         self._test_set = _DataSet(self._ds_path_handler,
@@ -220,15 +218,22 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                   self._n_pitch_bins, self._pitch_bounds,
                                   self._n_energy_bins, self._energy_bounds)
 
-        generator = torch.Generator().manual_seed(2137)
-        percentages = [self._train_val_split, 1 - self._train_val_split]
-        train_val_ds = _DataSet(self._ds_path_handler,
-                                train_val_samples,
-                                self._n_pitch_bins, self._pitch_bounds,
-                                self._n_energy_bins, self._energy_bounds)
-        self._train_set, self._val_set = torch.utils.data.random_split(train_val_ds,
-                                                                       percentages,
-                                                                       generator=generator)
+        train_samples = np.random.choice(
+            train_val_samples,
+            size=int(len(train_val_samples) * self._train_val_split),
+            replace=False)
+
+        val_samples = [s for s in train_val_samples if s not in train_samples]
+
+        self._train_set = _DataSet(self._ds_path_handler,
+                                   list(train_samples),
+                                   self._n_pitch_bins, self._pitch_bounds,
+                                   self._n_energy_bins, self._energy_bounds)
+
+        self._val_set = _DataSet(self._ds_path_handler,
+                                 list(val_samples),
+                                 self._n_pitch_bins, self._pitch_bounds,
+                                 self._n_energy_bins, self._energy_bounds)
 
     def train_dataloader(self):
         assert self._train_set is not None, 'Make sure to call setup() before using this method!'
@@ -238,7 +243,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            shuffle=True,
                                            num_workers=self._num_workers,
                                            pin_memory=True,
-                                           collate_fn=_DataSet.collate_fn)
+                                           collate_fn=self._train_set.collate_fn)
 
     def val_dataloader(self):
         assert self._val_set is not None, 'Make sure to call setup() before using this method!'
@@ -248,7 +253,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            shuffle=False,
                                            num_workers=self._num_workers,
                                            pin_memory=True,
-                                           collate_fn=_DataSet.collate_fn)
+                                           collate_fn=self._val_set.collate_fn)
 
     def test_dataloader(self):
         assert self._test_set is not None, 'Make sure to call setup() before using this method!'
@@ -258,4 +263,4 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            shuffle=False,
                                            num_workers=self._num_workers,
                                            pin_memory=True,
-                                           collate_fn=_DataSet.collate_fn)
+                                           collate_fn=self._test_set.collate_fn)

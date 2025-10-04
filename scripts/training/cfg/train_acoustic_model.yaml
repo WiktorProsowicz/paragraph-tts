@@ -1,3 +1,68 @@
 train_cfg:
     binarize_alignment_start_step: 10000
-    
+    binarization_loss_warmup_steps: 1000
+    mlflow_experiment: sample_experiment
+    mlflow_run_name: sample_run
+    save_checkpoints: True
+    enable_profiling: True
+    seed: 2137
+    num_epochs: 10
+    ckpt_path: null
+
+data_cfg:
+    processed_ds_path: tmp/librittsr_processed_dev
+    batch_size: 2
+    num_workers: 4
+    num_test_samples: 100
+    train_val_split: 0.95
+    explicit_prosody_quant:
+        n_pitch_bins: 256
+        pitch_bounds_min: -2.0
+        pitch_bounds_max: 3.0
+        n_energy_bins: 256
+        energy_bounds_min: -2.0
+        energy_bounds_max: 3.0
+
+optim_cfg:
+    name: adam
+    params:
+        lr: 2e-4
+        betas: [0.9, 0.999]
+        eps: 1e-8
+
+model_cfg:
+    encoder:
+        hidden_size: 384
+        phoneme_vocab_size: 74
+        pos_tags_vocab_size: 37
+        ling_stats_dim: 4
+        n_att_blocks: 6
+        att_feature_map_dim: 96
+        num_att_heads: 4
+        prenet_dropout_rate: 0.2
+        blocks_dropout_rate: 0.1
+    decoder:
+        hidden_size: 384
+        n_att_blocks: 6
+        n_mel_channels: 80
+        att_feature_map_dim: 96
+        num_att_heads: 4
+        blocks_dropout_rate: 0.1
+        postnet_dropout_rate: 0.1
+    context_encoder:
+        input_emb_dim: 1536
+        hidden_size: 384
+        n_blocks: 3
+        dropout_rate: 0.1
+        num_att_heads: 4
+        att_feature_map_dim: 96
+    var_adaptor:
+        d_model: 384
+        n_mel_channels: 80
+        aligner_temperature: 0.0005
+        multi_speaker: True
+        predictor_n_layers: 3
+        predictor_n_int_channels: 32
+        predictor_kernel_size: 5
+        dropout_rate: 0.1
+        spk_emb_dim: 512

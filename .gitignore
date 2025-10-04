@@ -6,3 +6,5 @@ tmp
 __pycache__/
 outputs/
 log/
+mlruns/
+tensorboard/
