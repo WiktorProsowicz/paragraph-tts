@@ -36,6 +36,16 @@ class _ContextProcessingBlock(torch.nn.Module):
                     K=16,
                     hidden_sizes=[hidden_size, hidden_size]
                 )
+            ]
+        )
+
+        self._cbhg_postnets = torch.nn.ModuleList(
+            [
+                torch.nn.Sequential(
+                    torch.nn.Linear(hidden_size * 2, hidden_size),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(p=dropout_rate)
+                )
                 for _ in range(n_blocks)
             ]
         )
@@ -73,8 +83,9 @@ class _ContextProcessingBlock(torch.nn.Module):
 
         outputs = self._prenet(inputs)
 
-        for block in self._blocks:
+        for block, postnet in zip(self._blocks, self._cbhg_postnets):
             outputs = block(outputs, input_lengths)
+            outputs = postnet(outputs)
 
         global_states_last = outputs[torch.arange(batch_size), input_lengths - 1]
         global_states_first = outputs[:, 0]
@@ -83,9 +94,9 @@ class _ContextProcessingBlock(torch.nn.Module):
         global_states = self._global_states_enc(global_states)
 
         chosen_context = self._att(
-            query=phoneme_representations,
-            key=outputs,
-            value=outputs,
+            queries=phoneme_representations,
+            keys=outputs,
+            values=outputs,
             key_mask=input_mask,
             query_mask=phoneme_mask
         )

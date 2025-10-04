@@ -47,8 +47,8 @@ class Decoder(torch.nn.Module):
         )
 
     def forward(self,
-                encoder_outputs: torch.Tensor,
-                input_lengths: torch.Tensor) -> torch.Tensor:
+                encoder_output: torch.Tensor,
+                input_length: torch.Tensor) -> torch.Tensor:
         """Generates mel-spectrogram frames from encoded linguistic representations.
         
         Args:
@@ -56,13 +56,12 @@ class Decoder(torch.nn.Module):
             input_lengths: Tensor of shape [B] containing lengths of the input sequences.
         """
 
-        sequence_mask = neural_utils.binary_mask_from_lengths(input_lengths)
+        sequence_mask = neural_utils.binary_mask_from_lengths(input_length)
 
-        outputs = encoder_outputs
+        outputs = encoder_output
 
         for block in self._blocks:
             outputs = block(outputs,
-                            query_mask=sequence_mask,
                             input_mask=sequence_mask)
 
-        return self._post_net(outputs)
+        return self._post_net(outputs).transpose(1, 2)

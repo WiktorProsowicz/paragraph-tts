@@ -25,10 +25,11 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
         self._head_size = d_model // num_heads
         self._feature_map_dim = feature_map_dim
 
-        self._permutation = self._generate_permutation_sequence(num_heads,
+        permutation = self._generate_permutation_sequence(num_heads,
                                                                 feature_map_dim,
                                                                 max_seq_length=5000,
                                                                 seed=2137)
+        self._permutation = torch.nn.Parameter(permutation, requires_grad=False)
 
         self._q_proj = torch.nn.Linear(d_model, d_model, bias=False)
         self._k_proj = torch.nn.Linear(d_model, d_model, bias=False)

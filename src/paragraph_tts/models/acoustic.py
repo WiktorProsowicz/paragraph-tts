@@ -111,7 +111,7 @@ class AcousticModel(pl.LightningModule):
             phoneme_mask=neural_utils.binary_mask_from_lengths(inputs['input_phonemes_length']),
             pitch_possible_values=inputs['pitch_possible_values'],
             energy_possible_values=inputs['energy_possible_values'],
-            speaker_embedding=inputs['spk_embedding'],
+            speaker_embedding=inputs['spk_emb'],
             **forced_args
         )
 
@@ -197,14 +197,14 @@ class AcousticModel(pl.LightningModule):
             prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
 
             pitch_pred_loss = torch.nn.L1Loss(reduction='none')(
-                model_output['predicted_pitch_quant'],
+                model_output['predicted_pitch'],
                 model_output['target_pitch_quant']
             )
             pitch_pred_loss = (pitch_pred_loss * prosody_mask).sum() / prosody_mask.sum()
             losses['pitch_pred_loss'] = pitch_pred_loss
 
             energy_pred_loss = torch.nn.L1Loss(reduction='none')(
-                model_output['predicted_energy_quant'],
+                model_output['predicted_energy'],
                 model_output['target_energy_quant']
             )
             energy_pred_loss = (energy_pred_loss * prosody_mask).sum() / prosody_mask.sum()

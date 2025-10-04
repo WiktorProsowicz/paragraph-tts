@@ -105,7 +105,7 @@ class CBHG(nn.Module):
 
         if input_lengths is not None:
             x = nn.utils.rnn.pack_padded_sequence(
-                x, input_lengths, batch_first=True, enforce_sorted=False)
+                x, input_lengths.cpu(), batch_first=True, enforce_sorted=False)
 
         y, _ = self.gru(x)
 
