@@ -52,54 +52,30 @@ def _prepare_utterance_for_enrichment(original_paragraph: raw_libri_dir_handler.
     )
 
 
-def _enrich_paragraph_and_save(enricher: enrichment.ContextEnricher,
+def _enrich_utterance_and_save(enricher: enrichment.ContextEnricher,
                                ds_metadata: librittsr_helpers.LibriTTSRMetadata,
-                               raw_path_handler: raw_libri_dir_handler.RawLibriDirHandler,
-                               para_info: raw_libri_dir_handler.ParagraphInfo,
-                               script_cfg: omegaconf.DictConfig):
+                               original_paragraph: raw_libri_dir_handler.OriginalParagraph,
+                               utt_info: raw_libri_dir_handler.UtteranceInfo,
+                               num_contexts_to_generate: int,
+                               output_path: str):
 
-    contexts_dir_handler = enriched_context_dir_handler.EnrichedContextDirHandler(
-        script_cfg.output_path
+
+    utterance_for_enrichment = _prepare_utterance_for_enrichment(
+        original_paragraph, utt_info, ds_metadata
     )
 
-    original_paragraph = raw_path_handler.get_original_paragraph(para_info)
+    contexts = [enricher.generate_context_for_utt(utterance_for_enrichment)
+                for _ in range(num_contexts_to_generate)]
 
-    if original_paragraph is None:
-        _logger().info('Skipping paragraph with missing original .books.tsv: %s', str(para_info))
-        return
+    if any(c is None for c in contexts):
+        _logger().debug('Failed to generate some contexts for utterance: %s', utt_info)
 
-    utterances_to_enrich = [utt_info for utt_info in para_info.utterances
-                            if not contexts_dir_handler.contains_contexts_for(utt_info)]
+    contexts = [c for c in contexts if c is not None]
 
-    utterances_to_enrich = [utt_info for utt_info in utterances_to_enrich
-                            if _should_enrich_utterance(utt_info, dict(script_cfg.filters))]
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    n_enriched_utterances = 0
-
-    for utt_info in utterances_to_enrich:
-
-        utterance_for_enrichment = _prepare_utterance_for_enrichment(
-            original_paragraph, utt_info, ds_metadata
-        )
-
-        contexts = [enricher.generate_context_for_utt(utterance_for_enrichment)
-                    for _ in range(script_cfg.num_contexts_to_generate)]
-
-        if any(c is None for c in contexts):
-            _logger().debug('Failed to generate some contexts for utterance: %s', utt_info)
-
-        contexts = [c for c in contexts if c is not None]
-
-        utterance_contexts_path = contexts_dir_handler.path_for_utt_contexts(utt_info)
-        os.makedirs(os.path.dirname(utterance_contexts_path), exist_ok=True)
-
-        with open(utterance_contexts_path, 'w', encoding='utf-8') as f:
-            json.dump(contexts, f, indent=4, ensure_ascii=False)
-
-        n_enriched_utterances += 1
-
-    if n_enriched_utterances == 0:
-        _logger().info('No utterances were enriched for paragraph: %s', str(para_info))
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(contexts, f, indent=4, ensure_ascii=False)
 
 
 def _should_enrich_utterance(utt_info: raw_libri_dir_handler.UtteranceInfo,
@@ -113,7 +89,7 @@ def _should_enrich_utterance(utt_info: raw_libri_dir_handler.UtteranceInfo,
     if n_words > filters['max_words_in_utterance']:
         return False
 
-    if not filters['allow_fragmented_sentences'] and librittsr_helpers.is_sentence_whole(text):
+    if not filters['allow_fragmented_sentences'] and not librittsr_helpers.is_sentence_whole(text):
         return False
 
     return True
@@ -157,7 +133,10 @@ def main(script_cfg: omegaconf.DictConfig):
 
     ds_metadata = librittsr_helpers.LibriTTSRMetadata()
 
-    def iter_filtered_paragraphs():
+    enriched_dir_handler = enriched_context_dir_handler.EnrichedContextDirHandler(
+        script_cfg.output_path)
+
+    def iter_filtered_utterances():
         for para_info in raw_path_handler.iter_all_paragraphs():
             split = raw_path_handler.get_split_for_speaker(para_info.spk_id)
 
@@ -168,29 +147,51 @@ def main(script_cfg: omegaconf.DictConfig):
 
             if original_paragraph is not None:
                 context_len = len(original_paragraph.sentences)
+
                 if context_len > script_cfg.filters.max_original_context_length:
+                    _logger().debug('Skipping paragraph %s: context length %d exceeds maximum %d',
+                                    para_info, context_len,
+                                    script_cfg.filters.max_original_context_length)
                     continue
 
-            yield para_info
+            for utt_info in para_info.utterances:
 
-    paragraphs_to_enrich = list(iter_filtered_paragraphs())
-    random.shuffle(paragraphs_to_enrich)
+                if not _should_enrich_utterance(utt_info,
+                                                dict(script_cfg.filters)):
+                    _logger().debug('Skipping utterance %s: did not pass filtering', utt_info)
+                    continue
 
-    for para_info in tqdm.tqdm(itertools.islice(paragraphs_to_enrich,
-                                                script_cfg.max_enriched_paragraphs),
+                if enriched_dir_handler.contains_contexts_for(utt_info):
+                    _logger().debug('Skipping utterance %s: already enriched', utt_info)
+                    continue
+
+                yield utt_info, para_info
+
+    utterances_to_enrich_l = list(iter_filtered_utterances())
+    random.shuffle(utterances_to_enrich_l)
+
+    utterances_to_enrich = itertools.islice(utterances_to_enrich_l,
+                                                script_cfg.max_enriched_utterances)
+    
+    num_utterances = sum(1 for _ in itertools.islice(utterances_to_enrich_l,
+                                                     script_cfg.max_enriched_utterances))
+
+    for utt_info, para_info in tqdm.tqdm(utterances_to_enrich,
                                desc='Enriching context',
                                dynamic_ncols=True,
-                               total=script_cfg.max_enriched_paragraphs,
+                               total=num_utterances,
                                miniters=1,
-                               unit='paragraphs',
+                               unit='utterances',
                                colour='#115b80'):
 
-        _logger().debug('Enriching paragraph: %s', para_info)
-        _enrich_paragraph_and_save(enricher,
+        _logger().debug('Enriching utterance: %s', utt_info)
+
+        _enrich_utterance_and_save(enricher,
                                    ds_metadata,
-                                   raw_path_handler,
-                                   para_info,
-                                   script_cfg)
+                                   raw_path_handler.get_original_paragraph(para_info),
+                                   utt_info,
+                                   script_cfg.num_contexts_to_generate,
+                                   enriched_dir_handler.path_for_utt_contexts(utt_info))
 
 
 if __name__ == '__main__':
