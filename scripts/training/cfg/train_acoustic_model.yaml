@@ -1,13 +1,22 @@
+run_cfg:
+    mlflow_experiment: sample_experiment
+    mlflow_run_name: sample_run
+    # If true, runs a quick development run (may ignore some settings).
+    dev_run: false
+    # If set, overrides num_epochs and runs for the specified number of steps.
+    continue_training_from_checkpoint: null
+
 train_cfg:
     binarize_alignment_start_step: 10000
     binarization_loss_warmup_steps: 1000
-    mlflow_experiment: sample_experiment
-    mlflow_run_name: sample_run
-    save_checkpoints: True
-    enable_profiling: True
     seed: 2137
-    num_epochs: 10
-    ckpt_path: null
+    visualize_every_n_epochs: 5 
+    val_every_n_epochs: 1
+    save_checkpoints: True
+    max_epochs: 10
+    accumulate_grad_batches: 4
+    # If set, loads model weights from the specified checkpoint before training.
+    load_model_from_checkpoint: null
 
 data_cfg:
     processed_ds_path: tmp/librittsr_processed_dev
@@ -36,6 +45,7 @@ model_cfg:
         phoneme_vocab_size: 74
         pos_tags_vocab_size: 37
         ling_stats_dim: 4
+        input_bert_dim: 1536
         n_att_blocks: 6
         att_feature_map_dim: 96
         num_att_heads: 4

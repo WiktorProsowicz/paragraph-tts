@@ -47,27 +47,35 @@ def main(script_cfg: omegaconf.DictConfig):
                        data_cfg.explicit_prosody_quant.energy_bounds_max)
     )
 
-    model = acoustic_model.AcousticModel(
-        model_cfg=omegaconf.OmegaConf.to_container(script_cfg.model_cfg),
-        optim_cfg=omegaconf.OmegaConf.to_container(script_cfg.optim_cfg),
-        train_cfg=omegaconf.OmegaConf.to_container(script_cfg.train_cfg)
-    )
+    if script_cfg.train_cfg.load_model_from_checkpoint is None:
 
-    experiment = mlflow.set_experiment(script_cfg.train_cfg.mlflow_experiment)
+        model = acoustic_model.AcousticModel(
+            model_cfg=omegaconf.OmegaConf.to_container(script_cfg.model_cfg),
+            optim_cfg=omegaconf.OmegaConf.to_container(script_cfg.optim_cfg),
+            train_cfg=omegaconf.OmegaConf.to_container(script_cfg.train_cfg),
+            data_cfg=omegaconf.OmegaConf.to_container(script_cfg.data_cfg)
+        )
+
+    else:
+        model = acoustic_model.AcousticModel.load_from_checkpoint(
+            script_cfg.train_cfg.load_model_from_checkpoint
+        )
+
+    experiment = mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
 
     client = mlflow.tracking.MlflowClient()
 
     run_id = None
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id],
-        filter_string=f"tags.mlflow.runName = '{script_cfg.train_cfg.mlflow_run_name}'",
+        filter_string=f"tags.mlflow.runName = '{script_cfg.run_cfg.mlflow_run_name}'",
         max_results=1
     )
 
     if runs:
         run_id = runs[0].info.run_id
 
-    with mlflow.start_run(run_name=script_cfg.train_cfg.mlflow_run_name,
+    with mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run_name,
                           run_id=run_id) as run:
 
         run_path = os.path.join('mlruns', experiment.experiment_id, run.info.run_id)
@@ -76,30 +84,34 @@ def main(script_cfg: omegaconf.DictConfig):
                                     output_dir=os.path.join(run_path, 'script_logs'))
         
         _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
+        logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.ERROR)
 
         profiler = None
+        limit_train_batches = None
+        limit_val_batches = None
+        limit_test_batches = None
 
-        if script_cfg.train_cfg.enable_profiling:
+        if script_cfg.run_cfg.dev_run:
             profiler = pl_profilers.PyTorchProfiler(
-                dirpath=os.path.join(run_path, 'profiling'),
+                dirpath=os.path.join('tensorboard',
+                                     f'{experiment.name}_{run.info.run_name}',
+                                     'version_0'),
                 filename=f'profile_{run.info.run_id}'
             )
+
+            limit_train_batches = 50
+            limit_val_batches = 5
+            limit_test_batches = 5
 
         if script_cfg.train_cfg.save_checkpoints:
             ckpt_callbacks = [
                 pl_callbacks.ModelCheckpoint(
                     dirpath=os.path.join(run_path, 'checkpoints'),
-                    filename='{epoch:02d}-{val/mel_loss:.4f}',
+                    filename='{epoch:02d}-val-{mel_loss:.4f}',
                     monitor='val/mel_loss',
                     mode='min',
-                    save_top_k=1,
+                    save_top_k=3,
                     every_n_epochs=5
-                ),
-                pl_callbacks.ModelCheckpoint(
-                    dirpath=os.path.join(run_path, 'checkpoints'),
-                    filename='{epoch:02d}-last',
-                    save_top_k=1,
-                    every_n_epochs=1,
                 )
             ]
 
@@ -109,37 +121,42 @@ def main(script_cfg: omegaconf.DictConfig):
         trainer = pl.Trainer(
             accelerator='auto',
             devices='auto',
-            max_epochs=script_cfg.train_cfg.num_epochs,
+            max_epochs=script_cfg.train_cfg.max_epochs,
             logger=[
                 pl_loggers.MLFlowLogger(
-                    experiment_name=script_cfg.train_cfg.mlflow_experiment,
-                    run_name=script_cfg.train_cfg.mlflow_run_name,
+                    experiment_name=script_cfg.run_cfg.mlflow_experiment,
+                    run_name=script_cfg.run_cfg.mlflow_run_name,
                     run_id=run.info.run_id),
                 pl_loggers.TensorBoardLogger(
                     save_dir='tensorboard',
                     name=f'{experiment.name}_{run.info.run_name}',
-                    version=0,
-                    default_hp_metric=False
+                    default_hp_metric=False,
+                    version=0
                 )
             ],
             callbacks=[
                 pl_callbacks.EarlyStopping(
                     monitor='val/mel_loss', min_delta=0.0,
-                    patience=1,
+                    patience=3,
                     mode='min'
                 ),
+                pl_callbacks.ModelSummary(max_depth=2)
             ] + ckpt_callbacks,
-            # fast_dev_run=True,
             num_sanity_val_steps=1,
             profiler=profiler,
-            # deterministic=True,
             enable_checkpointing=True,
-            # default_root_dir=
+            check_val_every_n_epoch=script_cfg.train_cfg.val_every_n_epochs,
+            limit_train_batches=limit_train_batches,
+            limit_val_batches=limit_val_batches,
+            limit_test_batches=limit_test_batches,
+            log_every_n_steps=25,
         )
+
+        _logger().info('Starting training...')
 
         trainer.fit(model,
                     datamodule=data_module,
-                    ckpt_path=script_cfg.train_cfg.ckpt_path)
+                    ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,7 @@
 """Contains processed LibriTTS-R dataset loader."""
 
+import logging
+
 import torch
 from typing import List, Dict, Tuple
 import random
@@ -11,6 +13,8 @@ from comp_trans_tts.preprocessor import preprocessor as ctt_preprocessor
 
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
+def _logger():
+    return logging.getLogger(__name__)
 
 class _DataSet(torch.utils.data.Dataset):
     """Loads serialized data from disk."""
@@ -92,6 +96,8 @@ class _DataSet(torch.utils.data.Dataset):
             phoneme_ids.shape[0], spec.shape[1]
         )
 
+        align_att_mask = torch.ones(spec.shape[1], phoneme_ids.shape[0], dtype=torch.bool)
+
         return {
             'spk_emb': torch.load(sample.spk_embedding_path),
             'context_token_emb': context_token_emb,
@@ -113,7 +119,8 @@ class _DataSet(torch.utils.data.Dataset):
             'word_to_phoneme_indices': word_to_phoneme_indices,
             'sentence_pos': torch.tensor(context.utterance_pos.value, dtype=torch.long),
             'spk_rate': speaking_rate,
-            'align_att_prior': torch.tensor(align_prior, dtype=torch.float)
+            'align_att_prior': torch.tensor(align_prior, dtype=torch.float),
+            'align_att_mask': align_att_mask
         }
 
     def collate_fn(self, batch_samples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -130,7 +137,8 @@ class _DataSet(torch.utils.data.Dataset):
             [b['input_spec'].T for b in batch_samples], batch_first=True, padding_value=0.0
         ).transpose(1, 2)
 
-        for key in ['bert_to_word_pool_matrix', 'spec_to_word_pool_matrix', 'align_att_prior']:
+        for key in ['bert_to_word_pool_matrix', 'spec_to_word_pool_matrix',
+                    'align_att_prior', 'align_att_mask']:
 
             pad_dim_0 = max(b[key].shape[0] for b in batch_samples)
             pad_dim_1 = max(b[key].shape[1] for b in batch_samples)
@@ -209,29 +217,36 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
 
     def setup(self, stage: str):
 
+        _logger().debug('Setting up dataset...')
+
         all_samples = list(self._ds_path_handler.iter_samples())
-        test_samples = np.random.choice(all_samples, size=100, replace=False)  # type: ignore
-        train_val_samples = [s for s in all_samples if s not in test_samples]
+        random.shuffle(all_samples)
+
+        test_samples = all_samples[:self._num_test_samples]
+        train_val_samples = all_samples[self._num_test_samples:]
+
+        _logger().debug('Creating test set with %d samples.', len(test_samples))
 
         self._test_set = _DataSet(self._ds_path_handler,
-                                  list(test_samples),
+                                  test_samples,
                                   self._n_pitch_bins, self._pitch_bounds,
                                   self._n_energy_bins, self._energy_bounds)
 
-        train_samples = np.random.choice(
-            train_val_samples,
-            size=int(len(train_val_samples) * self._train_val_split),
-            replace=False)
+        n_train_samples = int(len(train_val_samples) * self._train_val_split)
 
-        val_samples = [s for s in train_val_samples if s not in train_samples]
+        train_samples = train_val_samples[:n_train_samples]
+        val_samples = train_val_samples[n_train_samples:]
+
+        _logger().debug('Creating train set with %d samples.', len(train_samples))
+        _logger().debug('Creating validation set with %d samples.', len(val_samples))
 
         self._train_set = _DataSet(self._ds_path_handler,
-                                   list(train_samples),
+                                   train_samples,
                                    self._n_pitch_bins, self._pitch_bounds,
                                    self._n_energy_bins, self._energy_bounds)
 
         self._val_set = _DataSet(self._ds_path_handler,
-                                 list(val_samples),
+                                 val_samples,
                                  self._n_pitch_bins, self._pitch_bounds,
                                  self._n_energy_bins, self._energy_bounds)
 

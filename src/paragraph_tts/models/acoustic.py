@@ -1,15 +1,23 @@
 """Contains definition of acoustic model training/inference pipelines."""
 
-from typing import Dict, Any
+from typing import Callable, Dict, Any
+import logging
 
 import lightning.pytorch as pl
 import torch
 from comp_trans_tts.model import modules as ctt_modules
 from comp_trans_tts.model import loss as ctt_loss
+from speechbrain.inference.vocoders import HIFIGAN
 
 from paragraph_tts.layers import acoustic as acoustic_layers
 from paragraph_tts.models import utils as model_utils
 from paragraph_tts.utils import neural as neural_utils
+from paragraph_tts.utils import visualization as viz_utils
+from paragraph_tts.utils import inference as inference_utils
+
+
+def _logger():
+    return logging.getLogger(__name__)
 
 
 class AcousticModel(pl.LightningModule):
@@ -21,7 +29,8 @@ class AcousticModel(pl.LightningModule):
     def __init__(self,
                  model_cfg: Dict[str, Any],
                  optim_cfg: Dict[str, Any],
-                 train_cfg: Dict[str, Any]):
+                 train_cfg: Dict[str, Any],
+                 data_cfg: Dict[str, Any]):
 
         super().__init__()
 
@@ -44,6 +53,9 @@ class AcousticModel(pl.LightningModule):
         self._model_cfg = model_cfg
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
+        self._data_cfg = data_cfg
+
+        self.automatic_optimization = False
 
         self.save_hyperparameters()
 
@@ -55,7 +67,7 @@ class AcousticModel(pl.LightningModule):
 
     def forward(self,  # pylint: disable=arguments-differ
                 inputs: Dict[str, torch.Tensor],
-                use_teacher_forcing: bool,
+                use_teacher_forcing: bool
                 ) -> Dict[str, torch.Tensor]:
         """Performs forward pass of the model."""
 
@@ -63,6 +75,8 @@ class AcousticModel(pl.LightningModule):
             inputs['input_phoneme_ids'],
             inputs['input_pos_tags'],
             inputs['input_ling_stats'],
+            inputs['input_token_emb'],
+            inputs['word_to_phoneme_indices'],
             inputs['sentence_pos'],
             inputs['spk_rate'],
             inputs['input_phonemes_length']
@@ -92,7 +106,8 @@ class AcousticModel(pl.LightningModule):
                 'mel_lengths': inputs['input_spec_length'],
                 'pitch_target': inputs['input_f0'],
                 'energy_target': inputs['input_energy'],
-                'attn_prior': inputs['align_att_prior']
+                'attn_prior': inputs['align_att_prior'],
+                'att_mask': inputs['align_att_mask']
             }
 
         else:
@@ -102,13 +117,13 @@ class AcousticModel(pl.LightningModule):
                 'mel_lengths': None,
                 'pitch_target': None,
                 'energy_target': None,
-                'attn_prior': None
+                'attn_prior': None,
+                'att_mask': None
             }
 
         var_adaptor_output = self._var_adaptor(
             phoneme_repr=enc_output_enriched,
             phoneme_lengths=inputs['input_phonemes_length'],
-            phoneme_mask=neural_utils.binary_mask_from_lengths(inputs['input_phonemes_length']),
             pitch_possible_values=inputs['pitch_possible_values'],
             energy_possible_values=inputs['energy_possible_values'],
             speaker_embedding=inputs['spk_emb'],
@@ -119,7 +134,7 @@ class AcousticModel(pl.LightningModule):
             mel_length = inputs['input_spec_length']
 
         else:
-            predicted_dur = var_adaptor_output['predicted_durations']
+            predicted_dur = var_adaptor_output['predicted_duration']
             duration_rounded = torch.clamp(torch.round(predicted_dur), min=0)
             mel_length = duration_rounded.sum(dim=1).long()
 
@@ -133,37 +148,185 @@ class AcousticModel(pl.LightningModule):
             **var_adaptor_output
         }
 
-    def training_step(self, # pylint: disable=arguments-differ
+    def training_step(self,  # pylint: disable=arguments-differ
                       batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
 
-        model_output = self.forward(batch, use_teacher_forcing=True)
+        opt = self.optimizers()
+
+        if self.trainer.global_step % self._train_cfg['accumulate_grad_batches'] == 0:
+            opt.zero_grad()
+
+        model_output = self.forward(batch,
+                                    use_teacher_forcing=True)
 
         losses = self._calculate_losses(model_output, batch)
 
-        for loss_name, loss_t in losses.items():
-            self.log(f'train/{loss_name}',
-                     loss_t.item(),
-                     on_step=True,
-                     on_epoch=False,
-                     batch_size=self._train_cfg['batch_size'])
+        logged_dict = {f'train/{k}': v.detach().item() for k, v in losses.items()}
 
-        return sum(losses.values())
+        self.log_dict(logged_dict,
+                      on_step=True,
+                      on_epoch=False,
+                      batch_size=self._data_cfg['batch_size'])
 
-    def validation_step(self, # pylint: disable=arguments-differ
-                        batch: Dict[str, torch.Tensor]) -> None:
+        for loss in losses.values():
+            self.manual_backward(loss, retain_graph=True)
+
+        if (self.trainer.global_step + 1) % self._train_cfg['accumulate_grad_batches'] == 0:
+            opt.step()
+
+    def validation_step(self,  # pylint: disable=arguments-differ
+                        batch: Dict[str, torch.Tensor],
+                        batch_idx: int) -> None:
         """Performs validation step."""
 
-        model_output = self.forward(batch, use_teacher_forcing=True)
+        model_output = self.forward(batch,
+                                    use_teacher_forcing=True)
 
         losses = self._calculate_losses(model_output, batch)
 
-        for loss_name, loss_t in losses.items():
-            self.log(f'val/{loss_name}',
-                     loss_t.item(),
-                     on_step=False,
-                     on_epoch=True,
-                     batch_size=self._train_cfg['batch_size'])
+        logged_dict = {f'val/{k}': v.detach().item() for k, v in losses.items()}
+
+        self.log_dict(logged_dict,
+                      on_step=False,
+                      on_epoch=True,
+                      batch_size=self._data_cfg['batch_size'])
+
+        if self._should_visualize(batch_idx):
+
+            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz")
+
+            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+
+                self._visualize_outputs(batch,
+                                        model_output,
+                                        hifi_gan,
+                                        sample_idx,
+                                        teacher_forcing=True)
+
+            model_output = self.forward(batch,
+                                        use_teacher_forcing=False)
+
+            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+
+                self._visualize_outputs(batch,
+                                        model_output,
+                                        hifi_gan,
+                                        sample_idx,
+                                        teacher_forcing=False)
+
+    def _visualize_outputs(self,
+                           batch: Dict[str, torch.Tensor],
+                           model_output: Dict[str, torch.Tensor],
+                           hifi_gan: Callable[[torch.Tensor], torch.Tensor],
+                           sample_idx: int,
+                           teacher_forcing: bool) -> None:
+        """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
+
+        tensorboard = self.loggers[1].experiment
+
+        _logger().debug('Visualizing outputs for sample %d (teacher_forcing=%s).',
+                        sample_idx, teacher_forcing)
+
+        base_label = 'teacher_forcing' if teacher_forcing else 'inference'
+
+        fig = viz_utils.plot_spectrograms(model_output['pred_mel_spec'][sample_idx],
+                                          batch['input_spec'][sample_idx])
+
+        tensorboard.add_figure(f'{base_label}/spectrograms/{sample_idx}',
+                                          fig,
+                                          self.trainer.global_step)
+
+        if 'attn_soft' in model_output:
+
+            fig = viz_utils.plot_spec_text_alignment(
+                model_output['attn_soft'][sample_idx].detach()
+            )
+
+            tensorboard.add_figure(f'{base_label}/alignments/{sample_idx}',
+                                              fig,
+                                              self.trainer.global_step)
+
+        if 'attn_hard' in model_output:
+
+            fig = viz_utils.plot_spec_text_alignment(
+                model_output['attn_hard'][sample_idx].detach()
+            )
+
+            tensorboard.add_figure(f'{base_label}/hard_alignments/{sample_idx}',
+                                              fig,
+                                              self.trainer.global_step)
+
+        if 'target_pitch_quant' in model_output:
+
+            fig = viz_utils.plot_contours(
+                model_output['predicted_pitch'][sample_idx].detach(),
+                model_output['target_pitch_quant'][sample_idx],
+                'Pitch'
+            )
+
+            tensorboard.add_figure(f'{base_label}/pitch/{sample_idx}',
+                                              fig,
+                                              self.trainer.global_step)
+
+        if 'target_energy_quant' in model_output:
+
+            fig = viz_utils.plot_contours(
+                model_output['predicted_energy'][sample_idx].detach(),
+                model_output['target_energy_quant'][sample_idx],
+                'Energy'
+            )
+
+            tensorboard.add_figure(f'{base_label}/energy/{sample_idx}',
+                                              fig,
+                                              self.trainer.global_step)
+
+        if 'duration_rounded' in model_output:
+
+            fig = viz_utils.plot_contours(
+                model_output['duration_rounded'][sample_idx].detach(),
+                model_output['predicted_duration'][sample_idx],
+                'Duration'
+            )
+
+            tensorboard.add_figure(f'{base_label}/durations/{sample_idx}',
+                                              fig,
+                                              self.trainer.global_step)
+
+        
+
+        wav = inference_utils.transform_mel_to_wav(
+            model_output['pred_mel_spec'][sample_idx],
+            lambda x: hifi_gan.decode_batch(x),
+            split_spec_by_silences=True
+        ).squeeze(0)
+
+        tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/generated',
+                                         wav,
+                                         self.trainer.global_step,
+                                         sample_rate=22050)
+        
+        wav = inference_utils.transform_mel_to_wav(
+            batch['input_spec'][sample_idx],
+            lambda x: hifi_gan.decode_batch(x),
+            split_spec_by_silences=True
+        ).squeeze(0)
+
+        tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/target',
+                                         wav,
+                                         self.trainer.global_step,
+                                         sample_rate=22050)
+
+    def _should_visualize(self, val_batch_idx: int) -> bool:
+        """Decides whether to visualize outputs on the current validation step."""
+
+        if (self.trainer.current_epoch + 1) % self._train_cfg['visualize_every_n_epochs'] != 0:
+            return False
+
+        if val_batch_idx != 0:
+            return False
+
+        return True
 
     def _calculate_losses(self,
                           model_output: Dict[str, torch.Tensor],
@@ -191,15 +354,16 @@ class AcousticModel(pl.LightningModule):
 
             assert all(el in model_output for el in teacher_forcing_outputs)
 
-            ctc_loss = ctt_loss.ForwardSumLoss()(attn_logprob=model_output['attn_logprob'],
-                                                 in_lens=batch['input_phonemes_length'],
-                                                 out_lens=batch['input_spec_length'])
+            ctc_loss = ctt_loss.ForwardSumLoss()(
+                attn_logprob=model_output['attn_logprob'].unsqueeze(1),
+                in_lens=batch['input_phonemes_length'],
+                out_lens=batch['input_spec_length'])
 
             losses['ctc_loss'] = ctc_loss
 
             train_step = self.trainer.global_step
 
-            if train_step > self._train_cfg['binarize_alignment_start_step']:
+            if train_step < self._train_cfg['binarize_alignment_start_step']:
                 bin_loss_weight = 0.0
 
             else:

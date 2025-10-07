@@ -16,6 +16,7 @@ class Encoder(torch.nn.Module):
                  phoneme_vocab_size: int,
                  pos_tags_vocab_size: int,
                  ling_stats_dim: int,
+                 input_bert_dim: int,
                  n_att_blocks: int,
                  att_feature_map_dim: int,
                  num_att_heads: int,
@@ -46,8 +47,14 @@ class Encoder(torch.nn.Module):
             embedding_dim=SENTENCE_POS_EMB_DIM
         )
 
+        self._bert_enc = torch.nn.Sequential(
+            torch.nn.Linear(input_bert_dim, hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=prenet_dropout_rate)
+        )
+
         self._prenet = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 2 + SENTENCE_POS_EMB_DIM + 1, hidden_size),
+            torch.nn.Linear(hidden_size * 3 + SENTENCE_POS_EMB_DIM + 1, hidden_size),
             torch.nn.ReLU(),
             torch.nn.Dropout(p=prenet_dropout_rate),
             torch.nn.Linear(hidden_size, hidden_size),
@@ -76,7 +83,9 @@ class Encoder(torch.nn.Module):
                 phoneme_ids: torch.Tensor,
                 pos_tag_ids: torch.Tensor,
                 ling_stats: torch.Tensor,
-                sentence_pos_ids: torch.Tensor,
+                bert_embeddings: torch.Tensor,
+                word_to_phoneme_indices: torch.Tensor,
+                sentence_pos_id: torch.Tensor,
                 spk_rate: torch.Tensor,
                 input_length: torch.Tensor) -> torch.Tensor:
         """Encodes input sequences.
@@ -94,13 +103,16 @@ class Encoder(torch.nn.Module):
 
         phoneme_emb = self._phoneme_emb(phoneme_ids)
         pos_tags_emb = self._pos_tags_emb(pos_tag_ids)
-        sent_pos_emb = self._sentence_pos_emb(sentence_pos_ids)
+        sent_pos_emb = self._sentence_pos_emb(sentence_pos_id)
+        bert_emb = self._bert_enc(bert_embeddings)
+        bert_emb = bert_emb[torch.arange(bert_emb.size(0)).unsqueeze(1), word_to_phoneme_indices]
 
         sent_pos_emb = sent_pos_emb.unsqueeze(1).expand(-1, phoneme_emb.size(1), -1)
         spk_rate = spk_rate.unsqueeze(-1).unsqueeze(-1).expand(-1, phoneme_emb.size(1), 1)
 
         encoded_ling = self._ling_stats_fc(torch.cat([ling_stats, pos_tags_emb], dim=-1))
-        prenet_input = torch.cat([phoneme_emb, encoded_ling, sent_pos_emb, spk_rate], dim=-1)
+        prenet_input = torch.cat([phoneme_emb, encoded_ling, bert_emb,
+                                 sent_pos_emb, spk_rate], dim=-1)
 
         outputs = self._prenet(prenet_input)
 
