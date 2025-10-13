@@ -363,17 +363,15 @@ class AcousticModel(pl.LightningModule):
 
             train_step = self.trainer.global_step
 
-            if train_step < self._train_cfg['binarize_alignment_start_step']:
-                bin_loss_weight = 0.0
+            if train_step >= self._train_cfg['binarization_loss_start_step']:
 
-            else:
                 bin_warmup_steps = self._train_cfg['binarization_loss_warmup_steps']
                 bin_loss_weight = min((train_step - bin_warmup_steps) / bin_warmup_steps, 1.0)
 
-            bin_loss = ctt_loss.BinLoss()(hard_attention=model_output['attn_hard'],
+                bin_loss = ctt_loss.BinLoss()(hard_attention=model_output['attn_hard'],
                                           soft_attention=model_output['attn_soft'])
-            bin_loss *= bin_loss_weight
-            losses['bin_loss'] = bin_loss
+                
+                losses['bin_loss'] = bin_loss * bin_loss_weight
 
             prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
 
