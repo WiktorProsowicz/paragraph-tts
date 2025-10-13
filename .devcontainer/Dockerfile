@@ -14,7 +14,7 @@ RUN useradd -ms /bin/bash devcontainer \
     && adduser devcontainer sudo
 
 RUN apt update \
-    && apt install -y git sudo wget
+    && apt install -y git sudo wget tmux
 
 RUN wget -qO- https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 

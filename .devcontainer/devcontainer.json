@@ -21,7 +21,8 @@
 				"streetsidesoftware.code-spell-checker",
 				"matangover.mypy",
 				"ms-toolsai.tensorboard",
-				"skellock.just"
+				"skellock.just",
+				"ms-toolsai.jupyter"
 			]
 		}
 	},
