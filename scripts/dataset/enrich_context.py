@@ -6,7 +6,7 @@ import logging
 import os
 import random
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import hydra
 import omegaconf
@@ -24,19 +24,26 @@ def _logger():
     return logging.getLogger(__name__)
 
 
-def _prepare_utterance_for_enrichment(original_paragraph: raw_libri_dir_handler.OriginalParagraph,
+def _prepare_utterance_for_enrichment(
+        original_paragraph: Optional[raw_libri_dir_handler.OriginalParagraph],
                                       utt_info: raw_libri_dir_handler.UtteranceInfo,
                                       ds_metadata: librittsr_helpers.LibriTTSRMetadata
                                       ) -> enrichment.UtteranceForEnrichment:
-    preceding_sentences = [
-        original_paragraph.sentences[k] for k in sorted(original_paragraph.sentences)
-        if k < utt_info.utt_id
-    ]
+    
+    if original_paragraph is None:
+        preceding_sentences = []
+        following_sentences = []
 
-    following_sentences = [
-        original_paragraph.sentences[k] for k in sorted(original_paragraph.sentences)
-        if k > utt_info.utt_id
-    ]
+    else:
+        preceding_sentences = [
+            original_paragraph.sentences[k] for k in sorted(original_paragraph.sentences)
+            if k < utt_info.utt_id
+        ]
+
+        following_sentences = [
+            original_paragraph.sentences[k] for k in sorted(original_paragraph.sentences)
+            if k > utt_info.utt_id
+        ]
 
     utt_text = text_prep.TextProcessor.load_text(utt_info.text_path)
 
@@ -71,6 +78,10 @@ def _enrich_utterance_and_save(enricher: enrichment.ContextEnricher,
         _logger().debug('Failed to generate some contexts for utterance: %s', utt_info)
 
     contexts = [c for c in contexts if c is not None]
+
+    if not contexts:
+        _logger().debug('Failed to generate any contexts for utterance: %s', utt_info)
+        return
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
