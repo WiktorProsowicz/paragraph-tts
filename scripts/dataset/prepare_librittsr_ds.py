@@ -50,7 +50,11 @@ def main(script_cfg: omegaconf.DictConfig):
         min_words_in_utterance=script_cfg.filters.min_words_in_utterance,
         allow_fragmented_sentences=script_cfg.filters.allow_fragmented_sentences,
         max_paragraph_length=script_cfg.filters.max_context_length,
-        min_paragraph_length=script_cfg.filters.min_context_length
+        min_paragraph_length=script_cfg.filters.min_context_length,
+        min_utterance_duration=script_cfg.filters.min_utterance_duration,
+        max_utterance_duration=script_cfg.filters.max_utterance_duration,
+        min_words_in_context=script_cfg.filters.min_words_in_context,
+        max_words_in_context=script_cfg.filters.max_words_in_context
     )
 
     preprocessor = data.processor.LibriTTSRPreprocessor(raw_ds_path_hand,

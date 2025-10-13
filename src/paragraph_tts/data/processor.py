@@ -30,9 +30,9 @@ def _logger():
 class SampleFilterCfg:
     """Configuration of utterance/paragraph filter."""
 
-    # Maximum number of words in utterance (either the input utterance or context sentences).
+    # Maximum number of words in utterance.
     max_words_in_utterance: int
-    # Minimum number of words in utterance (either the input utterance or context sentences).
+    # Minimum number of words in utterance.
     min_words_in_utterance: int
     # Whether to allow processing input utterances that are fragments of sentences.
     allow_fragmented_sentences: bool
@@ -40,6 +40,14 @@ class SampleFilterCfg:
     max_paragraph_length: int
     # Minimum number of sentences in paragraph (context).
     min_paragraph_length: int
+    # Minimum duration of an utterance in seconds.
+    min_utterance_duration: float
+    # Maximum duration of an utterance in seconds.
+    max_utterance_duration: float
+    # Minimum number of words in either original or enriched context.
+    min_words_in_context: int
+    # Maximum number of words in either original or enriched context.
+    max_words_in_context: int
 
 
 class LibriTTSRPreprocessor:
@@ -87,11 +95,6 @@ class LibriTTSRPreprocessor:
     def run_for_speaker(self, speaker_id: int):
         """Runs preprocessing of samples for given speaker."""
 
-        if self._multi_speaker:
-            _logger().debug('Preparing speaker embedding for spk %d', speaker_id)
-            os.makedirs(os.path.join(self._output_path, 'spk_embeddings'), exist_ok=True)
-            self._prepare_spk_embedding(speaker_id)
-
         for chap_id in self._raw_path_handler.iter_chapters(speaker_id):
             for para_info in self._raw_path_handler.iter_paragraphs(speaker_id, chap_id):
 
@@ -105,6 +108,11 @@ class LibriTTSRPreprocessor:
             _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
 
             self._save_normalization_stats_for_speaker(speaker_id)
+
+            if self._multi_speaker:
+                _logger().debug('Preparing speaker embedding for spk %d', speaker_id)
+                os.makedirs(os.path.join(self._output_path, 'spk_embeddings'), exist_ok=True)
+                self._prepare_spk_embedding(speaker_id)
 
     def save_metadata(self, metadata: Dict[str, Any]):
         """Saves dataset metadata to output path."""
@@ -122,7 +130,7 @@ class LibriTTSRPreprocessor:
         utterances_to_process = list(filter(self._should_process_utterance, para_info.utterances))
 
         if not utterances_to_process:
-            _logger().debug('No utterances to process for paragraph %s, skipping.', para_info)
+            _logger().debug('No utterances to process for paragraph %s, skipping.', str(para_info))
             return
 
         original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
@@ -131,7 +139,8 @@ class LibriTTSRPreprocessor:
                 not self._should_process_context(list(original_paragraph.sentences.values()))):
 
             if self._enriched_contexts_path_hand is None:
-                _logger().debug('Skipping paragraph with missing original context: %s', para_info)
+                _logger().debug('Skipping paragraph with missing original context: %s',
+                                str(para_info))
                 return
 
             utts_with_enriched_context = [
@@ -142,7 +151,7 @@ class LibriTTSRPreprocessor:
 
             if not utts_with_enriched_context:
                 _logger().debug('Skipping paragraph with neither original nor enriched context: %s',
-                                para_info)
+                                str(para_info))
                 return
 
             context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
@@ -167,6 +176,11 @@ class LibriTTSRPreprocessor:
             with open(os.path.join(context_embeddings_dir, 'original', 'metadata.json'),
                       'w', encoding='utf-8') as f:
                 json.dump(paragraph_metadata, f, indent=4)
+
+        _logger().debug('Out of %d utterances in paragraph %s, processing %d',
+                        len(para_info.utterances),
+                        str(para_info),
+                        len(utterances_to_process))
 
         for utt_info in utterances_to_process:
 
@@ -193,6 +207,14 @@ class LibriTTSRPreprocessor:
             if not librittsr_helpers.is_sentence_whole(text):
                 return False
 
+        dur = self._audio_processor.length_in_sec_of_file(utt_info.wav_path)
+
+        if dur < self._filter_cfg.min_utterance_duration:
+            return False
+
+        if dur > self._filter_cfg.max_utterance_duration:
+            return False
+
         return True
 
     def _should_process_context(self, context: List[str]) -> bool:
@@ -204,12 +226,12 @@ class LibriTTSRPreprocessor:
             return False
 
         clean_context = [self._text_processor.clean_text(sent) for sent in context]
-        word_counts = [len(sent.split()) for sent in clean_context]
+        word_count = sum(len(sent.split()) for sent in clean_context)
 
-        if any(wc > self._filter_cfg.max_words_in_utterance for wc in word_counts):
+        if word_count > self._filter_cfg.max_words_in_context:
             return False
 
-        if any(wc < self._filter_cfg.min_words_in_utterance for wc in word_counts):
+        if word_count < self._filter_cfg.min_words_in_context:
             return False
 
         return True

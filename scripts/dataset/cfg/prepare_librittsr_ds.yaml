@@ -6,10 +6,19 @@ enriched_contexts_path: tmp/librittsr_enriched_contexts
 prepare_speaker_embeddings: true
 embedders_device: cpu
 filters:
+  # Maximum number of words in an utterance.
   max_words_in_utterance: 100
+  # Minimum number of words in an utterance.
   min_words_in_utterance: 1
+  # Max number of utterances in either original or enriched context.
   max_context_length: 6
+  # Min number of utterances in either original or enriched context.
   min_context_length: 3
+  # Minimum number of words in either original or enriched context.
+  min_words_in_context: 20
+  # Maximum number of words in either original or enriched context.
+  max_words_in_context: 200
+  # List of DS splits to be considered.
   choose_splits:
     [
       "dev-clean",
@@ -21,3 +30,7 @@ filters:
       "train-other-500",
     ]
   allow_fragmented_sentences: true
+  # Minimum duration of a sentence in seconds.
+  min_utterance_duration: 1.0
+  # Maximum duration of a sentence in seconds.
+  max_utterance_duration: 40.0
