@@ -1,6 +1,6 @@
 """Contains utilities for inference with trained models."""
 
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 import numpy as np
 import torch
@@ -8,7 +8,8 @@ import torch
 
 def split_spectrogram_by_silences(spec: torch.Tensor,
                                   energy_threshold_percentile: float = 20.0,
-                                  min_silence_length: int = 11
+                                  min_silence_length: int = 11,
+                                  min_chunk_length: int = 80
                                   ) -> List[torch.Tensor]:
     """Splits mel-spectrogram into chunks separated by silences."""
 
@@ -22,24 +23,33 @@ def split_spectrogram_by_silences(spec: torch.Tensor,
     silence_starts = np.where(diff == 1)[0]
     silence_ends = np.where(diff == -1)[0]
 
-    silences = [((start + end) // 2, end - start)
-                for start, end in zip(silence_starts, silence_ends)]
-    silences = [sil for sil in silences if sil[1] >= min_silence_length]
+    sil_lens = silence_ends - silence_starts
 
-    split_points = [0] + [silence[0] for silence in silences] + [spec.shape[1]]
+    sil_points = (silence_starts + silence_ends) // 2
+    sil_points = sil_points[sil_lens >= min_silence_length]
 
-    slices = []
+    chunk_lens = np.diff(np.concatenate(([0], sil_points, [spec.shape[1]])))
 
-    for slice_start, slice_end in zip(split_points[:-1], split_points[1:]):
-        slices.append(spec[:, slice_start:slice_end])
+    chunk_lens_l = [chunk_lens[0]] if chunk_lens[0] >= min_chunk_length else [0]
+    first_chunk_to_check = 1 if chunk_lens[0] >= min_chunk_length else 0
 
-    return slices
+    for l in chunk_lens[first_chunk_to_check:]:
+        if l < min_chunk_length:
+            chunk_lens_l[-1] += l
+
+        else:
+            chunk_lens_l.append(l)
+
+    return torch.split(spec, chunk_lens_l, dim=1)
 
 
 def transform_mel_to_wav(mel: torch.Tensor,
                          vocoder: Callable[[torch.Tensor], torch.Tensor],
-                         split_spec_by_silences: bool = True) -> torch.Tensor:
+                         split_spec_by_silences: bool = True) -> Optional[torch.Tensor]:
     """Transforms mel-spectrogram to waveform using a vocoder model."""
+
+    if mel.shape[1] <= 1:
+        return None
 
     if split_spec_by_silences:
         mel_chunks = split_spectrogram_by_silences(mel)
@@ -56,6 +66,5 @@ def transform_mel_to_wav(mel: torch.Tensor,
             wav_chunk = vocoder(chunk).squeeze(0)
 
         wav_chunks.append(wav_chunk.cpu())
-
 
     return torch.cat(wav_chunks, dim=-1)

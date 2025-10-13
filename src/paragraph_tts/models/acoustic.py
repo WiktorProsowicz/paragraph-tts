@@ -194,7 +194,8 @@ class AcousticModel(pl.LightningModule):
 
         if self._should_visualize(batch_idx):
 
-            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz")
+            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz",
+                                            run_opts={"device": self.device})
 
             for sample_idx in range(min(10, self._data_cfg['batch_size'])):
 
@@ -293,21 +294,26 @@ class AcousticModel(pl.LightningModule):
                                               fig,
                                               self.trainer.global_step)
 
-        
+        san_dur = inference_utils.sanitize_predicted_durations(
+            model_output['predicted_duration'][sample_idx])
+        mel_length = san_dur.sum().item()
 
         wav = inference_utils.transform_mel_to_wav(
-            model_output['pred_mel_spec'][sample_idx],
+            model_output['pred_mel_spec'][sample_idx][:, :mel_length],
             lambda x: hifi_gan.decode_batch(x),
             split_spec_by_silences=True
-        ).squeeze(0)
+        )
 
-        tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/generated',
-                                         wav,
-                                         self.trainer.global_step,
-                                         sample_rate=22050)
+        if wav is not None:
+            tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/generated',
+                                            wav.squeeze(0),
+                                            self.trainer.global_step,
+                                            sample_rate=22050)
         
+        mel_len = batch['input_spec_length'][sample_idx]
+
         wav = inference_utils.transform_mel_to_wav(
-            batch['input_spec'][sample_idx],
+            batch['input_spec'][sample_idx][:, :mel_len],
             lambda x: hifi_gan.decode_batch(x),
             split_spec_by_silences=True
         ).squeeze(0)
