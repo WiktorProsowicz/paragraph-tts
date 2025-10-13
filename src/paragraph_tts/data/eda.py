@@ -16,6 +16,7 @@ from paragraph_tts.data import preprocessing
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path.raw_libri_dir_handler import ParagraphInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import UtteranceInfo
+from paragraph_tts.utils.path.raw_libri_dir_handler import OriginalParagraph
 
 _FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
 
@@ -356,6 +357,18 @@ class FeaturesExtractor:
 
         figures['num_sentences_per_original_paragraph'] = fig
 
+        bins = min(100, len(set(stats_per_orig_para['n_words_in_paragraph'])))
+        fig, ax = plt.subplots()
+        ax.hist(stats_per_orig_para['n_words_in_paragraph'], bins=bins)
+        ax.set_title('Number of words per original paragraph')
+        ax.set_xlabel('Number of words')
+        ax.set_ylabel('Number of original paragraphs')
+        ax.axvline(x=np.mean(stats_per_orig_para['n_words_in_paragraph']),
+                   color='red', linestyle='--', label='Mean')
+        ax.legend()
+
+        figures['num_words_per_original_paragraph'] = fig
+
         return figures
 
     def get_example_paragraphs(self) -> Dict[str, Iterator[ParagraphInfo]]:
@@ -445,6 +458,49 @@ class FeaturesExtractor:
                 'upper_outliers': itertools.islice(length_sec_upper_outliers, 5)
             }
         }
+
+    def get_outliers_original_paragraphs(self) -> Dict[str, Iterator[OriginalParagraph]]:
+        """Returns outlier original paragraphs from the dataset.
+
+        Outliers are either extremely short or extremely long original paragraphs.
+        """
+
+        word_count_outliers = []
+        sentence_count_outliers = []
+
+        stats_per_orig_para = self._get_stats_per_original_paragraph()
+
+        q1_word_counts = np.percentile(stats_per_orig_para['n_words_in_paragraph'], 25)
+        q3_word_counts = np.percentile(stats_per_orig_para['n_words_in_paragraph'], 75)
+
+        q1_sentence_counts = np.percentile(stats_per_orig_para['n_sentences_in_paragraph'], 25)
+        q3_sentence_counts = np.percentile(stats_per_orig_para['n_sentences_in_paragraph'], 75)
+
+        for para_info in self._raw_path_handler.iter_all_paragraphs():
+
+            original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+
+            if original_paragraph is None:
+                continue
+
+            n_sentences = len(original_paragraph.sentences)
+            n_words = sum(len(self._text_processor.clean_text(sentence).split())
+                          for sentence in original_paragraph.sentences.values())
+
+            if _is_outlier(n_words, q1_word_counts, q3_word_counts):
+                word_count_outliers.append(original_paragraph)
+
+            if _is_outlier(n_sentences, q1_sentence_counts, q3_sentence_counts):
+                sentence_count_outliers.append(original_paragraph)
+
+        random.shuffle(word_count_outliers)
+        random.shuffle(sentence_count_outliers)
+
+        return {
+            'word_count': itertools.islice(word_count_outliers, 5),
+            'sentence_count': itertools.islice(sentence_count_outliers, 5)
+        }
+
     
     def _get_stats_per_original_paragraph(self) -> Dict[str, Any]:
 

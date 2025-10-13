@@ -23,6 +23,7 @@ This directory contains results of EDA on LibriTTS-R dataset:
 - figures/: Directory with various figures visualizing the dataset.
 - example_paragraphs/: Directory with example paragraphs from the dataset.
 - outlier_utterances/: Directory with outlier utterances based on various statistics (e.g word count)
+- outlier_paragraphs/: Directory with outlier paragraphs based on various statistics (e.g word count)
 
 Notes:
     - A paragraph is considered complete if it contains all utterances from 0 to N
@@ -99,6 +100,30 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
                     dst_wav_f.write(wav_data)
 
 
+def _save_outlier_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
+                             output_dir: str):
+    
+    _logger().info('Saving outlier paragraphs...')
+
+    outliers = feature_extractor.get_outliers_original_paragraphs()
+
+    for stat_type, paragraphs in outliers.items():
+
+        outliers_dir = os.path.join(output_dir, 'outlier_paragraphs', stat_type)
+        os.makedirs(outliers_dir, exist_ok=True)
+
+        for para_idx, para_info in enumerate(paragraphs):
+
+            para_path = os.path.join(outliers_dir, f'paragraph_{para_idx:03d}.txt')
+            with open(para_path, 'w', encoding='utf-8') as para_f:
+                
+                para_f.write(f'Paragraph ID: {para_info.para_id}\n')
+                para_f.write(f'Chapter ID: {para_info.chap_id}\n')
+                para_f.write(f'Speaker ID: {para_info.spk_id}\n')
+
+                for sent_idx, sentence in para_info.sentences.items():
+                    para_f.write(f'{sent_idx}: {sentence}\n')
+
 @hydra.main(version_base=None, config_path='cfg', config_name='perform_eda')
 def main(script_cfg: omegaconf.DictConfig):
     """Runs LibriTTS-R Exploratory Data Analysis."""
@@ -148,6 +173,8 @@ def main(script_cfg: omegaconf.DictConfig):
     _save_example_paragraphs(feature_extractor, script_cfg.output_dir)
 
     _save_outlier_utterances(feature_extractor, script_cfg.output_dir)
+
+    _save_outlier_paragraphs(feature_extractor, script_cfg.output_dir)
 
     with open(os.path.join(script_cfg.output_dir, 'README.txt'), 'w', encoding='utf-8') as readme_f:
         readme_f.write(RESULTS_DESC.format(
