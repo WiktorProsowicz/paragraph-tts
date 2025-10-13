@@ -96,7 +96,7 @@ def main(script_cfg: omegaconf.DictConfig):
         if script_cfg.run_cfg.dev_run:
             profiler = pl_profilers.PyTorchProfiler(
                 dirpath=os.path.join('tensorboard',
-                                     f'{experiment.name}_{run.info.run_name}',
+                                     f'{experiment.name}/{run.info.run_name}',
                                      'version_0'),
                 filename=f'profile_{run.info.run_id}',
                 row_limit=-1,
@@ -150,7 +150,7 @@ def main(script_cfg: omegaconf.DictConfig):
                     run_id=run.info.run_id),
                 pl_loggers.TensorBoardLogger(
                     save_dir='tensorboard',
-                    name=f'{experiment.name}_{run.info.run_name}',
+                    name=f'{experiment.name}/{run.info.run_name}',
                     default_hp_metric=False,
                     version=0
                 )
