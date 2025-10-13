@@ -1,6 +1,6 @@
 run_cfg:
-    mlflow_experiment: sample_experiment
-    mlflow_run_name: sample_run
+    mlflow_experiment: Default
+    mlflow_run_name: Default
     # If true, runs a quick development run (may ignore some settings).
     dev_run: false
     # If set, overrides num_epochs and runs for the specified number of steps.
@@ -11,16 +11,16 @@ train_cfg:
     binarization_loss_start_step: 10000
     binarization_loss_warmup_steps: 1000
     seed: 2137
-    visualize_every_n_epochs: 5 
+    visualize_every_n_epochs: 1
     val_every_n_epochs: 1
     save_checkpoints: True
-    max_epochs: 10
+    max_epochs: 50
     accumulate_grad_batches: 4
     # If set, loads model weights from the specified checkpoint before training.
     load_model_from_checkpoint: null
 
 data_cfg:
-    processed_ds_path: tmp/librittsr_processed_dev
+    processed_ds_path: tmp/librittsr_processed
     batch_size: 2
     num_workers: 4
     num_test_samples: 100
