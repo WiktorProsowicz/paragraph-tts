@@ -73,7 +73,8 @@ class Encoder(torch.nn.Module):
                     encoder_dim=hidden_size,
                     feed_forward_dropout_p=blocks_dropout_rate,
                     attention_dropout_p=blocks_dropout_rate,
-                    conv_dropout_p=blocks_dropout_rate
+                    conv_dropout_p=blocks_dropout_rate,
+                    conv_kernel_size=9
                 )
                 for _ in range(n_att_blocks)
             ]

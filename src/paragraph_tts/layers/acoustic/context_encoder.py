@@ -33,7 +33,7 @@ class _ContextProcessingBlock(torch.nn.Module):
             [
                 cbhg.CBHG(
                     in_dim=hidden_size,
-                    K=16,
+                    K=6,
                     hidden_sizes=[hidden_size, hidden_size]
                 )
             ]
