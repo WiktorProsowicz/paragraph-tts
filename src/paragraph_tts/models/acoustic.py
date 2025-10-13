@@ -55,8 +55,6 @@ class AcousticModel(pl.LightningModule):
         self._train_cfg = train_cfg
         self._data_cfg = data_cfg
 
-        self.automatic_optimization = False
-
         self.save_hyperparameters()
 
     def configure_optimizers(self):
@@ -134,9 +132,9 @@ class AcousticModel(pl.LightningModule):
             mel_length = inputs['input_spec_length']
 
         else:
-            predicted_dur = var_adaptor_output['predicted_duration']
-            duration_rounded = torch.clamp(torch.round(predicted_dur), min=0)
-            mel_length = duration_rounded.sum(dim=1).long()
+            ph_durations = inference_utils.sanitize_predicted_durations(
+                var_adaptor_output['predicted_duration'])
+            mel_length = ph_durations.sum(dim=1)
 
         pred_mel_spec = self._decoder(
             var_adaptor_output['output'],
@@ -152,11 +150,6 @@ class AcousticModel(pl.LightningModule):
                       batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
 
-        opt = self.optimizers()
-
-        if self.trainer.global_step % self._train_cfg['accumulate_grad_batches'] == 0:
-            opt.zero_grad()
-
         model_output = self.forward(batch,
                                     use_teacher_forcing=True)
 
@@ -169,11 +162,7 @@ class AcousticModel(pl.LightningModule):
                       on_epoch=False,
                       batch_size=self._data_cfg['batch_size'])
 
-        for loss in losses.values():
-            self.manual_backward(loss, retain_graph=True)
-
-        if (self.trainer.global_step + 1) % self._train_cfg['accumulate_grad_batches'] == 0:
-            opt.step()
+        return sum(losses.values())
 
     def validation_step(self,  # pylint: disable=arguments-differ
                         batch: Dict[str, torch.Tensor],
@@ -394,5 +383,14 @@ class AcousticModel(pl.LightningModule):
             )
             energy_pred_loss = (energy_pred_loss * prosody_mask).sum() / prosody_mask.sum()
             losses['energy_pred_loss'] = energy_pred_loss
+
+            duration_mask = neural_utils.binary_mask_from_lengths(batch['input_phonemes_length'])
+
+            duration_loss = torch.nn.L1Loss(reduction='none')(
+                model_output['predicted_duration'],
+                model_output['duration_rounded'].detach()
+            )
+            duration_loss = (duration_loss * duration_mask).sum() / duration_mask.sum()
+            losses['duration_loss'] = duration_loss
 
         return losses

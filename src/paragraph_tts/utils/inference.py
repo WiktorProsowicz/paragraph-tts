@@ -6,6 +6,21 @@ import numpy as np
 import torch
 
 
+MAX_ALLOWED_DURATION = 10000  # To avoid OOM errors during inference
+
+
+def sanitize_predicted_durations(durations: torch.Tensor) -> torch.Tensor:
+    """Sanitizes predicted durations by rounding and clamping to non-negative values.
+
+    The durations can be either batched (B, T) or unbatched (T,).
+    """
+
+    durations_quant = torch.clamp(torch.round(durations), min=0).long()
+    duration_mask = torch.cumsum(durations_quant, dim=-1) <= MAX_ALLOWED_DURATION
+
+    return durations_quant * duration_mask.long()
+
+
 def split_spectrogram_by_silences(spec: torch.Tensor,
                                   energy_threshold_percentile: float = 20.0,
                                   min_silence_length: int = 11,

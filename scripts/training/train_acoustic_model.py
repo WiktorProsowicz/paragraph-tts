@@ -82,41 +82,62 @@ def main(script_cfg: omegaconf.DictConfig):
 
         logging_utils.setup_logging('train_acoustic_model',
                                     output_dir=os.path.join(run_path, 'script_logs'))
-        
+
         _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
-        logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.ERROR)
+        logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
 
         profiler = None
         limit_train_batches = None
         limit_val_batches = None
         limit_test_batches = None
 
+        callbacks = [pl_callbacks.ModelSummary(max_depth=2),]
+
         if script_cfg.run_cfg.dev_run:
             profiler = pl_profilers.PyTorchProfiler(
                 dirpath=os.path.join('tensorboard',
                                      f'{experiment.name}_{run.info.run_name}',
                                      'version_0'),
-                filename=f'profile_{run.info.run_id}'
+                filename=f'profile_{run.info.run_id}',
+                row_limit=-1,
+                profiler_kwargs={
+                    'with_stack': True,
+                    'with_modules': True,
+                    'profile_memory': True,
+                }
             )
+
+            # profiler = pl_profilers.AdvancedProfiler(
+            #     os.path.join(run_path, 'profiling'),
+            #     'advanced_profiler',
+            #     dump_stats=False)
 
             limit_train_batches = 50
             limit_val_batches = 5
             limit_test_batches = 5
 
         if script_cfg.train_cfg.save_checkpoints:
-            ckpt_callbacks = [
+            callbacks.append(
                 pl_callbacks.ModelCheckpoint(
                     dirpath=os.path.join(run_path, 'checkpoints'),
-                    filename='{epoch:02d}-val-{mel_loss:.4f}',
                     monitor='val/mel_loss',
                     mode='min',
                     save_top_k=3,
-                    every_n_epochs=5
-                )
-            ]
+                    every_n_epochs=1)
+            )
 
-        else:
-            ckpt_callbacks = []
+        if script_cfg.run_cfg.dev_run:
+            callbacks.append(
+                pl_callbacks.DeviceStatsMonitor(cpu_stats=True)
+            )
+
+        if not script_cfg.run_cfg.dev_run:
+            callbacks.append(
+                pl_callbacks.EarlyStopping(
+                    monitor='val/mel_loss', min_delta=0.0,
+                    patience=3,
+                    mode='min')
+            )
 
         trainer = pl.Trainer(
             accelerator='auto',
@@ -134,14 +155,7 @@ def main(script_cfg: omegaconf.DictConfig):
                     version=0
                 )
             ],
-            callbacks=[
-                pl_callbacks.EarlyStopping(
-                    monitor='val/mel_loss', min_delta=0.0,
-                    patience=3,
-                    mode='min'
-                ),
-                pl_callbacks.ModelSummary(max_depth=2)
-            ] + ckpt_callbacks,
+            callbacks=callbacks,
             num_sanity_val_steps=1,
             profiler=profiler,
             enable_checkpointing=True,
@@ -150,6 +164,7 @@ def main(script_cfg: omegaconf.DictConfig):
             limit_val_batches=limit_val_batches,
             limit_test_batches=limit_test_batches,
             log_every_n_steps=25,
+            accumulate_grad_batches=script_cfg.train_cfg.accumulate_grad_batches
         )
 
         _logger().info('Starting training...')
