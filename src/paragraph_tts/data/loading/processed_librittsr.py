@@ -59,6 +59,10 @@ class _DataSet(torch.utils.data.Dataset):
         phoneme_lengths = torch.tensor(phoneme_ids.shape[0], dtype=torch.long)
         spec = torch.load(sample.input_data.spec_pth)
         spec_length = torch.tensor(spec.shape[1], dtype=torch.long)
+        input_token_emb = torch.load(sample.input_data.bert_embeddings_pth).to(torch.float)
+        bert_to_word_pool_matrix = torch.load(sample.input_data.bert_to_word_pool_matrix_pth)
+
+        input_token_emb = torch.matmul(bert_to_word_pool_matrix.T, input_token_emb)
 
         speaking_rate = torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float)
 
@@ -104,7 +108,7 @@ class _DataSet(torch.utils.data.Dataset):
             'context_tokens_length': context_tokens_length,
             'context_pse': context_token_pse,
             'context_pse_length': context_pse_length,
-            'input_token_emb': torch.load(sample.input_data.bert_embeddings_pth).to(torch.float),
+            'input_token_emb': input_token_emb,
             'input_phoneme_ids': phoneme_ids,
             'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
@@ -113,7 +117,6 @@ class _DataSet(torch.utils.data.Dataset):
             'input_energy': energy,
             'input_ling_stats': torch.load(sample.input_data.ling_stats_pth),
             'input_pos_tags': pos_tags,
-            'bert_to_word_pool_matrix': torch.load(sample.input_data.bert_to_word_pool_matrix_pth),
             'phone_to_spec_indices': torch.load(sample.input_data.phone_to_spec_indices_pth),
             'spec_to_word_pool_matrix': torch.load(sample.input_data.spec_to_word_pool_matrix_pth),
             'word_to_phoneme_indices': word_to_phoneme_indices,
@@ -137,8 +140,7 @@ class _DataSet(torch.utils.data.Dataset):
             [b['input_spec'].T for b in batch_samples], batch_first=True, padding_value=0.0
         ).transpose(1, 2)
 
-        for key in ['bert_to_word_pool_matrix', 'spec_to_word_pool_matrix',
-                    'align_att_prior', 'align_att_mask']:
+        for key in ['spec_to_word_pool_matrix', 'align_att_prior', 'align_att_mask']:
 
             pad_dim_0 = max(b[key].shape[0] for b in batch_samples)
             pad_dim_1 = max(b[key].shape[1] for b in batch_samples)
