@@ -19,6 +19,21 @@ train_cfg:
     accumulate_grad_batches: 4
     # If set, loads model weights from the specified checkpoint before training.
     load_model_from_checkpoint: null
+    loss_weights:
+        mel_loss: 2.0
+        ctc_loss: 1.0
+        bin_loss: 1.0
+        pitch_pred_loss: 1.0
+        energy_pred_loss: 1.0
+        duration_pred_loss: 1.0
+    loss_est_max:
+        mel_loss: 5.0
+        ctc_loss: 3.2
+        bin_loss: 1.1
+        pitch_pred_loss: 0.6
+        energy_pred_loss: 0.65
+        duration_pred_loss: 6.6
+        
 
 data_cfg:
     processed_ds_path: tmp/librittsr_processed

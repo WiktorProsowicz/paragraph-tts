@@ -1,6 +1,6 @@
 """Contains definition of acoustic model training/inference pipelines."""
 
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Any, Optional
 import logging
 
 import lightning.pytorch as pl
@@ -428,6 +428,10 @@ class AcousticModel(pl.LightningModule):
                 model_output['duration_rounded'].detach()
             )
             duration_loss = (duration_loss * duration_mask).sum() / duration_mask.sum()
-            losses['duration_loss'] = duration_loss
+            losses['duration_pred_loss'] = duration_loss
+
+        for l_name in losses:
+            losses[l_name] /= self._train_cfg['loss_est_max'][l_name]
+            losses[l_name] *= self._train_cfg['loss_weights'][l_name]
 
         return losses
