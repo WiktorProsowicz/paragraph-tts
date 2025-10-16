@@ -12,6 +12,7 @@ train_cfg:
     binarization_loss_warmup_steps: 1000
     seed: 2137
     visualize_every_n_epochs: 1
+    visualize_n_times_during_training: 5
     val_every_n_epochs: 1
     save_checkpoints: True
     max_epochs: 50

@@ -147,7 +147,8 @@ class AcousticModel(pl.LightningModule):
         }
 
     def training_step(self,  # pylint: disable=arguments-differ
-                      batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+                      batch: Dict[str, torch.Tensor],
+                      batch_idx: int) -> torch.Tensor:
         """Performs training step."""
 
         model_output = self.forward(batch,
@@ -161,6 +162,16 @@ class AcousticModel(pl.LightningModule):
                       on_step=True,
                       on_epoch=False,
                       batch_size=self._data_cfg['batch_size'])
+
+        if self._should_visualize(batch_idx, training=True):
+
+            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+
+                self._visualize_outputs(batch,
+                                        model_output,
+                                        None,
+                                        'training',
+                                        sample_idx)
 
         return sum(losses.values())
 
@@ -181,7 +192,7 @@ class AcousticModel(pl.LightningModule):
                       on_epoch=True,
                       batch_size=self._data_cfg['batch_size'])
 
-        if self._should_visualize(batch_idx):
+        if self._should_visualize(batch_idx, training=False):
 
             hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz",
                                             run_opts={"device": self.device})
@@ -191,8 +202,8 @@ class AcousticModel(pl.LightningModule):
                 self._visualize_outputs(batch,
                                         model_output,
                                         hifi_gan,
-                                        sample_idx,
-                                        teacher_forcing=True)
+                                        'teacher_forcing',
+                                        sample_idx)
 
             model_output = self.forward(batch,
                                         use_teacher_forcing=False)
@@ -202,86 +213,102 @@ class AcousticModel(pl.LightningModule):
                 self._visualize_outputs(batch,
                                         model_output,
                                         hifi_gan,
-                                        sample_idx,
-                                        teacher_forcing=False)
+                                        'inference',
+                                        sample_idx,)
 
     def _visualize_outputs(self,
                            batch: Dict[str, torch.Tensor],
                            model_output: Dict[str, torch.Tensor],
-                           hifi_gan: Callable[[torch.Tensor], torch.Tensor],
-                           sample_idx: int,
-                           teacher_forcing: bool) -> None:
+                           hifi_gan: Optional[Callable[[torch.Tensor], torch.Tensor]],
+                           base_label: str,
+                           sample_idx: int) -> None:
         """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
 
         tensorboard = self.loggers[1].experiment
 
-        _logger().debug('Visualizing outputs for sample %d (teacher_forcing=%s).',
-                        sample_idx, teacher_forcing)
+        _logger().debug('Visualizing outputs for sample %d (label=%s).',
+                        sample_idx, base_label)
 
-        base_label = 'teacher_forcing' if teacher_forcing else 'inference'
+        spec_length = batch['input_spec_length'][sample_idx].item()
 
-        fig = viz_utils.plot_spectrograms(model_output['pred_mel_spec'][sample_idx],
-                                          batch['input_spec'][sample_idx])
+        fig = viz_utils.plot_spectrograms(
+            model_output['pred_mel_spec'][sample_idx].detach()[:, :spec_length],
+            batch['input_spec'][sample_idx].detach()[:, :spec_length])
 
         tensorboard.add_figure(f'{base_label}/spectrograms/{sample_idx}',
-                                          fig,
-                                          self.trainer.global_step)
+                               fig,
+                               self.trainer.global_step)
 
         if 'attn_soft' in model_output:
 
+            ph_len = batch['input_phonemes_length'][sample_idx].item()
+            sp_len = batch['input_spec_length'][sample_idx].item()
+
             fig = viz_utils.plot_spec_text_alignment(
-                model_output['attn_soft'][sample_idx].detach()
+                model_output['attn_soft'][sample_idx].detach()[:sp_len, :ph_len]
             )
 
             tensorboard.add_figure(f'{base_label}/alignments/{sample_idx}',
-                                              fig,
-                                              self.trainer.global_step)
+                                   fig,
+                                   self.trainer.global_step)
 
         if 'attn_hard' in model_output:
 
+            ph_len = batch['input_phonemes_length'][sample_idx].item()
+            sp_len = batch['input_spec_length'][sample_idx].item()
+
             fig = viz_utils.plot_spec_text_alignment(
-                model_output['attn_hard'][sample_idx].detach()
+                model_output['attn_hard'][sample_idx].detach()[:sp_len, :ph_len]
             )
 
             tensorboard.add_figure(f'{base_label}/hard_alignments/{sample_idx}',
-                                              fig,
-                                              self.trainer.global_step)
+                                   fig,
+                                   self.trainer.global_step)
 
         if 'target_pitch_quant' in model_output:
 
+            cont_len = batch['input_spec_length'][sample_idx].item()
+
             fig = viz_utils.plot_contours(
-                model_output['predicted_pitch'][sample_idx].detach(),
-                model_output['target_pitch_quant'][sample_idx],
+                model_output['predicted_pitch'][sample_idx].detach()[:cont_len],
+                model_output['target_pitch_quant'][sample_idx].detach()[:cont_len],
                 'Pitch'
             )
 
             tensorboard.add_figure(f'{base_label}/pitch/{sample_idx}',
-                                              fig,
-                                              self.trainer.global_step)
+                                   fig,
+                                   self.trainer.global_step)
 
         if 'target_energy_quant' in model_output:
 
+            cont_len = batch['input_spec_length'][sample_idx].item()
+
             fig = viz_utils.plot_contours(
-                model_output['predicted_energy'][sample_idx].detach(),
-                model_output['target_energy_quant'][sample_idx],
+                model_output['predicted_energy'][sample_idx].detach()[:cont_len],
+                model_output['target_energy_quant'][sample_idx].detach()[:cont_len],
                 'Energy'
             )
 
             tensorboard.add_figure(f'{base_label}/energy/{sample_idx}',
-                                              fig,
-                                              self.trainer.global_step)
+                                   fig,
+                                   self.trainer.global_step)
 
         if 'duration_rounded' in model_output:
 
+            cont_len = batch['input_spec_length'][sample_idx].item()
+
             fig = viz_utils.plot_contours(
-                model_output['duration_rounded'][sample_idx].detach(),
-                model_output['predicted_duration'][sample_idx],
+                model_output['duration_rounded'][sample_idx].detach()[:cont_len],
+                model_output['predicted_duration'][sample_idx].detach()[:cont_len],
                 'Duration'
             )
 
             tensorboard.add_figure(f'{base_label}/durations/{sample_idx}',
-                                              fig,
-                                              self.trainer.global_step)
+                                   fig,
+                                   self.trainer.global_step)
+
+        if hifi_gan is None:
+            return
 
         san_dur = inference_utils.sanitize_predicted_durations(
             model_output['predicted_duration'][sample_idx])
@@ -295,10 +322,10 @@ class AcousticModel(pl.LightningModule):
 
         if wav is not None:
             tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/generated',
-                                            wav.squeeze(0),
-                                            self.trainer.global_step,
-                                            sample_rate=22050)
-        
+                                  wav.squeeze(0),
+                                  self.trainer.global_step,
+                                  sample_rate=22050)
+
         mel_len = batch['input_spec_length'][sample_idx]
 
         wav = inference_utils.transform_mel_to_wav(
@@ -308,18 +335,28 @@ class AcousticModel(pl.LightningModule):
         ).squeeze(0)
 
         tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/target',
-                                         wav,
-                                         self.trainer.global_step,
-                                         sample_rate=22050)
+                              wav,
+                              self.trainer.global_step,
+                              sample_rate=22050)
 
-    def _should_visualize(self, val_batch_idx: int) -> bool:
-        """Decides whether to visualize outputs on the current validation step."""
+    def _should_visualize(self,
+                          batch_idx: int,
+                          training: bool) -> bool:
+        """Decides whether to visualize outputs on the current train/val step."""
 
         if (self.trainer.current_epoch + 1) % self._train_cfg['visualize_every_n_epochs'] != 0:
             return False
 
-        if val_batch_idx != 0:
+        if not training and batch_idx != 0:
             return False
+
+        if training:
+            n_viz = self._train_cfg['visualize_n_times_during_training']
+            viz_interval = self.trainer.num_training_batches // (n_viz + 1)
+            proper_indices = [(i + 1) * viz_interval for i in range(n_viz)]
+
+            if batch_idx not in proper_indices:
+                return False
 
         return True
 
@@ -364,8 +401,8 @@ class AcousticModel(pl.LightningModule):
                 bin_loss_weight = min((train_step - bin_warmup_steps) / bin_warmup_steps, 1.0)
 
                 bin_loss = ctt_loss.BinLoss()(hard_attention=model_output['attn_hard'],
-                                          soft_attention=model_output['attn_soft'])
-                
+                                              soft_attention=model_output['attn_soft'])
+
                 losses['bin_loss'] = bin_loss * bin_loss_weight
 
             prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
