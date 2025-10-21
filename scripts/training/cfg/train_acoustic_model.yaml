@@ -75,7 +75,8 @@ model_cfg:
         postnet_dropout_rate: 0.1
     context_encoder:
         input_emb_dim: 1536
-        hidden_size: 384
+        hidden_size: 768
+        phonemes_hidden_size: 384
         n_blocks: 3
         cbhg_k_banks: 6
         dropout_rate: 0.1

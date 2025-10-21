@@ -13,6 +13,7 @@ class _ContextProcessingBlock(torch.nn.Module):
     def __init__(self,
                  input_emb_dim: int,
                  hidden_size: int,
+                 phonemes_hidden_size: int,
                  n_blocks: int,
                  cbhg_k_banks: int,
                  dropout_rate: float,
@@ -51,14 +52,20 @@ class _ContextProcessingBlock(torch.nn.Module):
             ]
         )
 
+        self._postnet = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, phonemes_hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=dropout_rate)
+        )
+
         self._global_states_enc = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 2, hidden_size),
+            torch.nn.Linear(hidden_size * 2, phonemes_hidden_size),
             torch.nn.ReLU(),
             torch.nn.Dropout(p=dropout_rate)
         )
 
         self._att = permute_former_att.PermuteFormerMHA(
-            d_model=hidden_size,
+            d_model=phonemes_hidden_size,
             num_heads=num_att_heads,
             feature_map_dim=att_feature_map_dim
         )
@@ -94,6 +101,8 @@ class _ContextProcessingBlock(torch.nn.Module):
         global_states = torch.cat([global_states_first, global_states_last], dim=-1)
         global_states = self._global_states_enc(global_states)
 
+        outputs = self._postnet(outputs) + global_states.unsqueeze(1)
+
         chosen_context = self._att(
             queries=phoneme_representations,
             keys=outputs,
@@ -111,6 +120,7 @@ class ContextEncoder(torch.nn.Module):
     def __init__(self,
                  input_emb_dim: int,
                  hidden_size: int,
+                 phonemes_hidden_size: int,
                  n_blocks: int,
                  cbhg_k_banks: int,
                  dropout_rate: float,
@@ -122,6 +132,7 @@ class ContextEncoder(torch.nn.Module):
         self._token_embs_enc = _ContextProcessingBlock(
             input_emb_dim=input_emb_dim,
             hidden_size=hidden_size,
+            phonemes_hidden_size=phonemes_hidden_size,
             n_blocks=n_blocks,
             cbhg_k_banks=cbhg_k_banks,
             dropout_rate=dropout_rate,
@@ -132,6 +143,7 @@ class ContextEncoder(torch.nn.Module):
         self._pse_enc = _ContextProcessingBlock(
             input_emb_dim=input_emb_dim,
             hidden_size=hidden_size,
+            phonemes_hidden_size=phonemes_hidden_size,
             n_blocks=n_blocks,
             cbhg_k_banks=cbhg_k_banks,
             dropout_rate=dropout_rate,
