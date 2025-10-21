@@ -156,7 +156,7 @@ def main(script_cfg: omegaconf.DictConfig):
                 )
             ],
             callbacks=callbacks,
-            num_sanity_val_steps=1,
+            num_sanity_val_steps=0,
             profiler=profiler,
             enable_checkpointing=True,
             check_val_every_n_epoch=script_cfg.train_cfg.val_every_n_epochs,
@@ -164,7 +164,8 @@ def main(script_cfg: omegaconf.DictConfig):
             limit_val_batches=limit_val_batches,
             limit_test_batches=limit_test_batches,
             log_every_n_steps=25,
-            accumulate_grad_batches=script_cfg.train_cfg.accumulate_grad_batches
+            accumulate_grad_batches=script_cfg.train_cfg.accumulate_grad_batches,
+            gradient_clip_val=script_cfg.train_cfg.gradient_clip_val
         )
 
         _logger().info('Starting training...')

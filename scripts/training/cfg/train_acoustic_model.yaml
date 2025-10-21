@@ -36,19 +36,20 @@ data_cfg:
     num_test_samples: 100
     train_val_split: 0.95
     explicit_prosody_quant:
-        n_pitch_bins: 256
+        n_pitch_bins: 48
         pitch_bounds_min: -2.0
         pitch_bounds_max: 3.0
-        n_energy_bins: 256
+        n_energy_bins: 48
         energy_bounds_min: -2.0
         energy_bounds_max: 3.0
 
 optim_cfg:
     name: adam
     params:
-        lr: 2e-4
+        lr: 0.0002
         betas: [0.9, 0.999]
         eps: 1e-8
+    lr_decay: 0.95
 
 model_cfg:
     encoder:
@@ -79,11 +80,9 @@ model_cfg:
         att_feature_map_dim: 96
     var_adaptor:
         d_model: 384
-        n_mel_channels: 80
-        aligner_temperature: 0.0005
         multi_speaker: True
-        predictor_n_layers: 3
-        predictor_n_int_channels: 32
-        predictor_kernel_size: 5
+        predictor_n_layers: 5
+        predictor_n_int_channels: 128
+        predictor_kernel_size: 3
         dropout_rate: 0.1
         spk_emb_dim: 512

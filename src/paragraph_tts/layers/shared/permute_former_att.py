@@ -27,8 +27,7 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
 
         permutation = self._generate_permutation_sequence(num_heads,
                                                                 feature_map_dim,
-                                                                max_seq_length=5000,
-                                                                seed=2137)
+                                                                max_seq_length=5000)
         self._permutation = torch.nn.Parameter(permutation, requires_grad=False)
 
         self._q_proj = torch.nn.Linear(d_model, d_model, bias=False)
@@ -86,11 +85,9 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
 
         return self._out_proj(out)
 
-    def _generate_permutation_sequence(self, n_heads, feature_map_dim, max_seq_length, seed):
+    def _generate_permutation_sequence(self, n_heads, feature_map_dim, max_seq_length):
 
-        rng = torch.Generator().manual_seed(seed)
-
-        perm = [torch.randperm(feature_map_dim, generator=rng) for _ in range(n_heads)]
+        perm = [torch.randperm(feature_map_dim) for _ in range(n_heads)]
         perm = torch.stack(perm, dim=0)
 
         expanded_perm = [torch.arange(feature_map_dim).unsqueeze(0).expand(n_heads, -1)]

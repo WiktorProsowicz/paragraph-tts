@@ -282,13 +282,17 @@ class AcousticModel(pl.LightningModule):
 
         if hifi_gan is None:
             return
-
-        san_dur = inference_utils.sanitize_predicted_durations(
-            model_output['predicted_duration'][sample_idx])
-        mel_length = san_dur.sum().item()
+        
+        if base_label != 'inference':
+            mel_len = batch['input_spec_length'][sample_idx]
+        
+        else:
+            san_dur = inference_utils.sanitize_predicted_durations(
+                model_output['predicted_duration'][sample_idx])
+            mel_len = san_dur.sum().item()
 
         wav = inference_utils.transform_mel_to_wav(
-            model_output['pred_mel_spec'][sample_idx][:, :mel_length],
+            model_output['pred_mel_spec'][sample_idx][:, :mel_len],
             lambda x: hifi_gan.decode_batch(x),
             split_spec_by_silences=True
         )
