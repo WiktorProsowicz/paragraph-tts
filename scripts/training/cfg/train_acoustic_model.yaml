@@ -7,9 +7,6 @@ run_cfg:
     continue_training_from_checkpoint: null
 
 train_cfg:
-    binarize_alignment_start_step: 20000
-    binarization_loss_start_step: 10000
-    binarization_loss_warmup_steps: 1000
     seed: 2137
     visualize_every_n_epochs: 1
     visualize_n_times_during_training: 5
@@ -21,18 +18,15 @@ train_cfg:
     load_model_from_checkpoint: null
     loss_weights:
         mel_loss: 2.0
-        ctc_loss: 1.0
-        bin_loss: 1.0
         pitch_pred_loss: 1.0
         energy_pred_loss: 1.0
         duration_pred_loss: 1.0
     loss_est_max:
-        mel_loss: 5.0
-        ctc_loss: 3.2
-        bin_loss: 1.1
-        pitch_pred_loss: 0.6
-        energy_pred_loss: 0.65
-        duration_pred_loss: 6.6
+        mel_loss: 3.0
+        pitch_pred_loss: 1.0
+        energy_pred_loss: 1.15
+        duration_pred_loss: 40.0
+    gradient_clip_val: 0.5
         
 
 data_cfg:

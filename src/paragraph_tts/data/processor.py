@@ -349,10 +349,12 @@ class LibriTTSRPreprocessor:
         wav = self._audio_processor.load_wav(utt_info.wav_path)
         spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
 
-        phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
-            alignment_prep.get_phone_to_spec_spans(word_phoneme_int_mapping,
+        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(word_phoneme_int_mapping,
                                                    text_features.word_phoneme_mapping,
                                                    spec.shape[1])
+
+        phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
+            spec_phone_spans
         )
         spec_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
             alignment_prep.get_word_to_spec_spans(word_phoneme_int_mapping,
@@ -370,7 +372,8 @@ class LibriTTSRPreprocessor:
             'energy': torch.tensor(energy, dtype=torch.float),
             'f0': torch.tensor(f0, dtype=torch.float),
             'phone_to_spec_indices': torch.tensor(phone_to_spec_indices, dtype=torch.long),
-            'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float)
+            'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float),
+            'explicit_durations': torch.tensor(spec_phone_spans, dtype=torch.long)
         }
 
     def _save_normalization_stats_for_speaker(self, spk_id: int):

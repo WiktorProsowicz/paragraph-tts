@@ -96,12 +96,6 @@ class _DataSet(torch.utils.data.Dataset):
         pos_tags = torch.load(sample.input_data.pos_tags_pth)
         pos_tags = pos_tags[word_to_phoneme_indices]
 
-        align_prior = ctt_preprocessor.Preprocessor.beta_binomial_prior_distribution(
-            phoneme_ids.shape[0], spec.shape[1]
-        )
-
-        align_att_mask = torch.ones(spec.shape[1], phoneme_ids.shape[0], dtype=torch.bool)
-
         return {
             'spk_emb': torch.load(sample.spk_embedding_path),
             'context_token_emb': context_token_emb,
@@ -122,8 +116,7 @@ class _DataSet(torch.utils.data.Dataset):
             'word_to_phoneme_indices': word_to_phoneme_indices,
             'sentence_pos': torch.tensor(context.utterance_pos.value, dtype=torch.long),
             'spk_rate': speaking_rate,
-            'align_att_prior': torch.tensor(align_prior, dtype=torch.float),
-            'align_att_mask': align_att_mask
+            'explicit_durations': torch.load(sample.input_data.durations_pth),
         }
 
     def collate_fn(self, batch_samples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -140,7 +133,7 @@ class _DataSet(torch.utils.data.Dataset):
             [b['input_spec'].T for b in batch_samples], batch_first=True, padding_value=0.0
         ).transpose(1, 2)
 
-        for key in ['spec_to_word_pool_matrix', 'align_att_prior', 'align_att_mask']:
+        for key in ['spec_to_word_pool_matrix']:
 
             pad_dim_0 = max(b[key].shape[0] for b in batch_samples)
             pad_dim_1 = max(b[key].shape[1] for b in batch_samples)
@@ -156,7 +149,7 @@ class _DataSet(torch.utils.data.Dataset):
             batch[key] = torch.stack(padded_matrices, dim=0)
 
         for key in ['context_token_emb', 'context_pse', 'input_token_emb', 'input_f0',
-                    'input_energy', 'input_ling_stats']:
+                    'input_energy', 'input_ling_stats', 'explicit_durations']:
 
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0.0)

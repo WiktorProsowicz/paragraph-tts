@@ -66,6 +66,7 @@ class UtteranceDataInfo:
     spec_pth: str
     f0_pth: str
     energy_pth: str
+    durations_pth: str
 
     ling_stats_pth: str
     pos_tags_pth: str
@@ -244,6 +245,7 @@ class ProcessedLibriDirHandler:
                                                          'spec_to_word_pool_matrix.pt'),
             'word_to_phoneme_indices_pth': os.path.join(input_data_path,
                                                         'word_to_phoneme_indices.pt'),
+            'durations_pth': os.path.join(input_data_path, 'explicit_durations.pt')
         }
 
         for path in paths.values():

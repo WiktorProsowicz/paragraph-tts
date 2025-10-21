@@ -60,8 +60,17 @@ class AcousticModel(pl.LightningModule):
     def configure_optimizers(self):
         """Sets up optimizer from config."""
 
-        return model_utils.optimizer_from_cfg(self._optim_cfg,
+        opt = model_utils.optimizer_from_cfg(self._optim_cfg,
                                               self.parameters())
+        
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            opt, gamma=self._optim_cfg['lr_decay']
+        )
+
+        return {
+            'optimizer': opt,
+            'scheduler': scheduler
+        }
 
     def forward(self,  # pylint: disable=arguments-differ
                 inputs: Dict[str, torch.Tensor],
@@ -93,30 +102,18 @@ class AcousticModel(pl.LightningModule):
 
         if use_teacher_forcing:
 
-            binarize_alignment = False
-
-            if self.trainer.global_step > self._train_cfg['binarize_alignment_start_step']:
-                binarize_alignment = True
-
             forced_args = {
-                'binarize_alignment': binarize_alignment,
-                'mel': inputs['input_spec'],
-                'mel_lengths': inputs['input_spec_length'],
+                'explicit_duration': inputs['explicit_durations'],
                 'pitch_target': inputs['input_f0'],
                 'energy_target': inputs['input_energy'],
-                'attn_prior': inputs['align_att_prior'],
-                'att_mask': inputs['align_att_mask']
             }
+
 
         else:
             forced_args = {
-                'binarize_alignment': None,
-                'mel': None,
-                'mel_lengths': None,
+                'explicit_duration': None,
                 'pitch_target': None,
-                'energy_target': None,
-                'attn_prior': None,
-                'att_mask': None
+                'energy_target': None
             }
 
         var_adaptor_output = self._var_adaptor(
@@ -134,6 +131,8 @@ class AcousticModel(pl.LightningModule):
         else:
             ph_durations = inference_utils.sanitize_predicted_durations(
                 var_adaptor_output['predicted_duration'])
+            ph_durations *= neural_utils.binary_mask_from_lengths(
+                inputs['input_phonemes_length'])
             mel_length = ph_durations.sum(dim=1)
 
         pred_mel_spec = self._decoder(
@@ -239,32 +238,6 @@ class AcousticModel(pl.LightningModule):
                                fig,
                                self.trainer.global_step)
 
-        if 'attn_soft' in model_output:
-
-            ph_len = batch['input_phonemes_length'][sample_idx].item()
-            sp_len = batch['input_spec_length'][sample_idx].item()
-
-            fig = viz_utils.plot_spec_text_alignment(
-                model_output['attn_soft'][sample_idx].detach()[:sp_len, :ph_len]
-            )
-
-            tensorboard.add_figure(f'{base_label}/alignments/{sample_idx}',
-                                   fig,
-                                   self.trainer.global_step)
-
-        if 'attn_hard' in model_output:
-
-            ph_len = batch['input_phonemes_length'][sample_idx].item()
-            sp_len = batch['input_spec_length'][sample_idx].item()
-
-            fig = viz_utils.plot_spec_text_alignment(
-                model_output['attn_hard'][sample_idx].detach()[:sp_len, :ph_len]
-            )
-
-            tensorboard.add_figure(f'{base_label}/hard_alignments/{sample_idx}',
-                                   fig,
-                                   self.trainer.global_step)
-
         if 'target_pitch_quant' in model_output:
 
             cont_len = batch['input_spec_length'][sample_idx].item()
@@ -295,11 +268,11 @@ class AcousticModel(pl.LightningModule):
 
         if 'duration_rounded' in model_output:
 
-            cont_len = batch['input_spec_length'][sample_idx].item()
+            cont_len = batch['input_phonemes_length'][sample_idx].item()
 
             fig = viz_utils.plot_contours(
-                model_output['duration_rounded'][sample_idx].detach()[:cont_len],
                 model_output['predicted_duration'][sample_idx].detach()[:cont_len],
+                model_output['duration_rounded'][sample_idx].detach()[:cont_len],
                 'Duration'
             )
 
@@ -378,54 +351,34 @@ class AcousticModel(pl.LightningModule):
         }
 
         teacher_forcing_outputs = (
-            'attn_soft', 'attn_hard', 'attn_logprob', 'duration_rounded',
-            'target_pitch_quant', 'target_energy_quant'
+            'duration_rounded', 'target_pitch_quant', 'target_energy_quant'
         )
 
         if any(el in model_output for el in teacher_forcing_outputs):
 
             assert all(el in model_output for el in teacher_forcing_outputs)
 
-            ctc_loss = ctt_loss.ForwardSumLoss()(
-                attn_logprob=model_output['attn_logprob'].unsqueeze(1),
-                in_lens=batch['input_phonemes_length'],
-                out_lens=batch['input_spec_length'])
-
-            losses['ctc_loss'] = ctc_loss
-
-            train_step = self.trainer.global_step
-
-            if train_step >= self._train_cfg['binarization_loss_start_step']:
-
-                bin_warmup_steps = self._train_cfg['binarization_loss_warmup_steps']
-                bin_loss_weight = min((train_step - bin_warmup_steps) / bin_warmup_steps, 1.0)
-
-                bin_loss = ctt_loss.BinLoss()(hard_attention=model_output['attn_hard'],
-                                              soft_attention=model_output['attn_soft'])
-
-                losses['bin_loss'] = bin_loss * bin_loss_weight
-
             prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
 
-            pitch_pred_loss = torch.nn.L1Loss(reduction='none')(
+            pitch_pred_loss = torch.nn.MSELoss(reduction='none')(
                 model_output['predicted_pitch'],
-                model_output['target_pitch_quant']
+                model_output['target_pitch_quant'].detach()
             )
             pitch_pred_loss = (pitch_pred_loss * prosody_mask).sum() / prosody_mask.sum()
             losses['pitch_pred_loss'] = pitch_pred_loss
 
-            energy_pred_loss = torch.nn.L1Loss(reduction='none')(
+            energy_pred_loss = torch.nn.MSELoss(reduction='none')(
                 model_output['predicted_energy'],
-                model_output['target_energy_quant']
+                model_output['target_energy_quant'].detach()
             )
             energy_pred_loss = (energy_pred_loss * prosody_mask).sum() / prosody_mask.sum()
             losses['energy_pred_loss'] = energy_pred_loss
 
             duration_mask = neural_utils.binary_mask_from_lengths(batch['input_phonemes_length'])
 
-            duration_loss = torch.nn.L1Loss(reduction='none')(
+            duration_loss = torch.nn.MSELoss(reduction='none')(
                 model_output['predicted_duration'],
-                model_output['duration_rounded'].detach()
+                model_output['duration_rounded'].to(torch.float32).detach()
             )
             duration_loss = (duration_loss * duration_mask).sum() / duration_mask.sum()
             losses['duration_pred_loss'] = duration_loss
