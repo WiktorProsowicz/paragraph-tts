@@ -59,6 +59,7 @@ model_cfg:
         ling_stats_dim: 4
         input_bert_dim: 1536
         n_att_blocks: 6
+        conformer_kernel_size: 9
         att_feature_map_dim: 96
         num_att_heads: 4
         prenet_dropout_rate: 0.2
@@ -66,6 +67,7 @@ model_cfg:
     decoder:
         hidden_size: 384
         n_att_blocks: 6
+        conformer_kernel_size: 9
         n_mel_channels: 80
         att_feature_map_dim: 96
         num_att_heads: 4
@@ -75,6 +77,7 @@ model_cfg:
         input_emb_dim: 1536
         hidden_size: 384
         n_blocks: 3
+        cbhg_k_banks: 6
         dropout_rate: 0.1
         num_att_heads: 4
         att_feature_map_dim: 96

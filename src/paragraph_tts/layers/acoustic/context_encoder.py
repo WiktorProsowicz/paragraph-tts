@@ -14,6 +14,7 @@ class _ContextProcessingBlock(torch.nn.Module):
                  input_emb_dim: int,
                  hidden_size: int,
                  n_blocks: int,
+                 cbhg_k_banks: int,
                  dropout_rate: float,
                  num_att_heads: int,
                  att_feature_map_dim: int):
@@ -33,7 +34,7 @@ class _ContextProcessingBlock(torch.nn.Module):
             [
                 cbhg.CBHG(
                     in_dim=hidden_size,
-                    K=6,
+                    K=cbhg_k_banks,
                     hidden_sizes=[hidden_size, hidden_size]
                 )
             ]
@@ -101,7 +102,7 @@ class _ContextProcessingBlock(torch.nn.Module):
             query_mask=phoneme_mask
         )
 
-        return chosen_context + phoneme_representations
+        return chosen_context
 
 
 class ContextEncoder(torch.nn.Module):
@@ -111,6 +112,7 @@ class ContextEncoder(torch.nn.Module):
                  input_emb_dim: int,
                  hidden_size: int,
                  n_blocks: int,
+                 cbhg_k_banks: int,
                  dropout_rate: float,
                  num_att_heads: int,
                  att_feature_map_dim: int):
@@ -121,6 +123,7 @@ class ContextEncoder(torch.nn.Module):
             input_emb_dim=input_emb_dim,
             hidden_size=hidden_size,
             n_blocks=n_blocks,
+            cbhg_k_banks=cbhg_k_banks,
             dropout_rate=dropout_rate,
             num_att_heads=num_att_heads,
             att_feature_map_dim=att_feature_map_dim
@@ -130,6 +133,7 @@ class ContextEncoder(torch.nn.Module):
             input_emb_dim=input_emb_dim,
             hidden_size=hidden_size,
             n_blocks=n_blocks,
+            cbhg_k_banks=cbhg_k_banks,
             dropout_rate=dropout_rate,
             num_att_heads=num_att_heads,
             att_feature_map_dim=att_feature_map_dim

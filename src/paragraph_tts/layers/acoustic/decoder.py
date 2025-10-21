@@ -14,6 +14,7 @@ class Decoder(torch.nn.Module):
     def __init__(self,
                  hidden_size: int,
                  n_att_blocks: int,
+                 conformer_kernel_size: int,
                  n_mel_channels: int,
                  att_feature_map_dim: int,
                  num_att_heads: int,
@@ -34,7 +35,7 @@ class Decoder(torch.nn.Module):
                     feed_forward_dropout_p=blocks_dropout_rate,
                     attention_dropout_p=blocks_dropout_rate,
                     conv_dropout_p=blocks_dropout_rate,
-                    conv_kernel_size=9
+                    conv_kernel_size=conformer_kernel_size
                 )
                 for _ in range(n_att_blocks)
             ]

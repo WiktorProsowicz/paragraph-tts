@@ -18,6 +18,7 @@ class Encoder(torch.nn.Module):
                  ling_stats_dim: int,
                  input_bert_dim: int,
                  n_att_blocks: int,
+                 conformer_kernel_size: int,
                  att_feature_map_dim: int,
                  num_att_heads: int,
                  prenet_dropout_rate: float,
@@ -74,7 +75,7 @@ class Encoder(torch.nn.Module):
                     feed_forward_dropout_p=blocks_dropout_rate,
                     attention_dropout_p=blocks_dropout_rate,
                     conv_dropout_p=blocks_dropout_rate,
-                    conv_kernel_size=9
+                    conv_kernel_size=conformer_kernel_size
                 )
                 for _ in range(n_att_blocks)
             ]
