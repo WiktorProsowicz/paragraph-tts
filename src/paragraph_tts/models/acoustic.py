@@ -130,8 +130,7 @@ class AcousticModel(pl.LightningModule):
 
         else:
             ph_durations = inference_utils.sanitize_predicted_durations(
-                var_adaptor_output['predicted_duration'])
-            ph_durations *= neural_utils.binary_mask_from_lengths(
+                var_adaptor_output['predicted_duration'],
                 inputs['input_phonemes_length'])
             mel_length = ph_durations.sum(dim=1)
 
@@ -288,7 +287,8 @@ class AcousticModel(pl.LightningModule):
         
         else:
             san_dur = inference_utils.sanitize_predicted_durations(
-                model_output['predicted_duration'][sample_idx])
+                model_output['predicted_duration'],
+                batch['input_phonemes_length'])[sample_idx]
             mel_len = san_dur.sum().item()
 
         wav = inference_utils.transform_mel_to_wav(

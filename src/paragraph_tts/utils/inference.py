@@ -5,15 +5,19 @@ from typing import List, Callable, Optional
 import numpy as np
 import torch
 
+from paragraph_tts.utils import neural as neural_utils
 
 MAX_ALLOWED_DURATION = 10000  # To avoid OOM errors during inference
 
 
-def sanitize_predicted_durations(durations: torch.Tensor) -> torch.Tensor:
+def sanitize_predicted_durations(durations: torch.Tensor,
+                                 sequences_lens: torch.Tensor) -> torch.Tensor:
     """Sanitizes predicted durations by rounding and clamping to non-negative values.
 
     The durations can be either batched (B, T) or unbatched (T,).
     """
+
+    durations *= neural_utils.binary_mask_from_lengths(sequences_lens)
 
     durations_quant = torch.clamp(torch.round(durations), min=0).long()
     duration_mask = torch.cumsum(durations_quant, dim=-1) <= MAX_ALLOWED_DURATION
