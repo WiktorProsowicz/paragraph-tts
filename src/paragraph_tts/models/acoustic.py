@@ -69,7 +69,7 @@ class AcousticModel(pl.LightningModule):
 
         return {
             'optimizer': opt,
-            'scheduler': scheduler
+            'lr_scheduler': scheduler
         }
 
     def forward(self,  # pylint: disable=arguments-differ
