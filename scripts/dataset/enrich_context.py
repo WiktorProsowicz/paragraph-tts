@@ -47,8 +47,8 @@ def _prepare_utterance_for_enrichment(
 
     utt_text = text_prep.TextProcessor.load_text(utt_info.text_path)
 
-    speaker, book = ds_metadata.get_speaker_and_book(original_paragraph.spk_id,
-                                                     original_paragraph.chap_id)
+    speaker, book = ds_metadata.get_speaker_and_book(utt_info.spk_id,
+                                                     utt_info.chap_id)
 
     return enrichment.UtteranceForEnrichment(
         text=utt_text,
