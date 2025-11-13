@@ -8,7 +8,7 @@ from typing import Iterator
 from typing import List
 from typing import TypeAlias
 
-import matplotlib.pyplot as plt  # type: ignore
+import matplotlib.pyplot as plt
 import numpy as np
 
 from paragraph_tts.data import librittsr_helpers
@@ -79,7 +79,8 @@ class FeaturesExtractor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = preprocessing.text.TextProcessor(bert_device='cpu')
+        self._text_processor = preprocessing.text.TextProcessor(
+            bert_device='cpu')
 
     def paragraph_as_lines(self, para_info: ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
@@ -132,7 +133,8 @@ class FeaturesExtractor:
 
         chapters_stats: Dict[str, Any] = {}
 
-        chapters_stats['num_chapters'] = len(list(self._raw_path_handler.iter_chapters()))
+        chapters_stats['num_chapters'] = len(
+            list(self._raw_path_handler.iter_chapters()))
 
         n_paragraphs_in_chapter = {}
         n_utterances_in_chapter = {}
@@ -145,7 +147,8 @@ class FeaturesExtractor:
 
                 for para_info in self._raw_path_handler.iter_paragraphs(spk_id, chap_id):
                     n_paragraphs_in_chapter[chap_id] += 1
-                    n_utterances_in_chapter[chap_id] += len(para_info.utterances)
+                    n_utterances_in_chapter[chap_id] += len(
+                        para_info.utterances)
 
         chapters_stats['paragraphs_per_chapter'] = _calculate_basic_numerical_stats(
             list(n_paragraphs_in_chapter.values())
@@ -176,10 +179,12 @@ class FeaturesExtractor:
                     n_utterances_in_paragraph.append(len(para_info.utterances))
 
                     if is_paragraph_valid(para_info):
-                        n_utterances_in_valid_paragraph.append(len(para_info.utterances))
+                        n_utterances_in_valid_paragraph.append(
+                            len(para_info.utterances))
 
                     if para_info.is_complete:
-                        n_utterances_per_complete_paragraph.append(len(para_info.utterances))
+                        n_utterances_per_complete_paragraph.append(
+                            len(para_info.utterances))
 
                     if not para_info.is_complete:
                         n_incomplete_paragraphs += 1
@@ -206,7 +211,7 @@ class FeaturesExtractor:
         paragraphs_stats['num_valid_paragraphs'] = n_valid_paragraphs
 
         return paragraphs_stats
-    
+
     def get_original_paragraphs_stats(self) -> Dict[str, Any]:
         """Returns stats related to original paragraphs (entire paragraphs from books)."""
 
@@ -214,7 +219,8 @@ class FeaturesExtractor:
 
         numerical_stats = self._get_stats_per_original_paragraph()
 
-        stats_dict['num_original_paragraphs'] = len(numerical_stats['n_words_in_paragraph'])
+        stats_dict['num_original_paragraphs'] = len(
+            numerical_stats['n_words_in_paragraph'])
 
         stats_dict['num_words_per_paragraph'] = _calculate_basic_numerical_stats(
             numerical_stats['n_words_in_paragraph']
@@ -238,7 +244,6 @@ class FeaturesExtractor:
 
         return stats_dict
 
-
     def get_utterances_stats(self) -> Dict[str, Any]:
         """Returns stats related to utterances."""
 
@@ -246,7 +251,8 @@ class FeaturesExtractor:
 
         stats_per_utterance = self._get_stats_per_utterance()
 
-        utterances_stats['num_utterances'] = len(stats_per_utterance['word_counts'])
+        utterances_stats['num_utterances'] = len(
+            stats_per_utterance['word_counts'])
 
         utterances_stats['words_per_utterance'] = _calculate_basic_numerical_stats(
             stats_per_utterance['word_counts'])
@@ -345,7 +351,8 @@ class FeaturesExtractor:
 
         stats_per_orig_para = self._get_stats_per_original_paragraph()
 
-        bins = min(100, len(set(stats_per_orig_para['n_sentences_in_paragraph'])))
+        bins = min(
+            100, len(set(stats_per_orig_para['n_sentences_in_paragraph'])))
         fig, ax = plt.subplots()
         ax.hist(stats_per_orig_para['n_sentences_in_paragraph'], bins=bins)
         ax.set_title('Number of sentences per original paragraph')
@@ -394,8 +401,10 @@ class FeaturesExtractor:
         random.shuffle(all_paragraphs)
 
         valid_paras = filter(is_paragraph_valid, all_paragraphs)
-        invalid_paras = itertools.filterfalse(is_paragraph_valid, all_paragraphs)
-        paras_with_non_whole_sentence = filter(contains_non_whole_sentence, all_paragraphs)
+        invalid_paras = itertools.filterfalse(
+            is_paragraph_valid, all_paragraphs)
+        paras_with_non_whole_sentence = filter(
+            contains_non_whole_sentence, all_paragraphs)
 
         return {
             'valid_paragraphs': itertools.islice(valid_paras, 10),
@@ -431,7 +440,8 @@ class FeaturesExtractor:
                 text_norm = self._text_processor.clean_text(text)
 
                 n_words = len(text_norm.split())
-                length_sec = self._audio_processor.length_in_sec_of_file(utterance.wav_path)
+                length_sec = self._audio_processor.length_in_sec_of_file(
+                    utterance.wav_path)
 
                 if _is_outlier_lower(n_words, q1_word_counts, q3_word_counts):
                     word_count_lower_outliers.append(utterance)
@@ -470,15 +480,20 @@ class FeaturesExtractor:
 
         stats_per_orig_para = self._get_stats_per_original_paragraph()
 
-        q1_word_counts = np.percentile(stats_per_orig_para['n_words_in_paragraph'], 25)
-        q3_word_counts = np.percentile(stats_per_orig_para['n_words_in_paragraph'], 75)
+        q1_word_counts = np.percentile(
+            stats_per_orig_para['n_words_in_paragraph'], 25)
+        q3_word_counts = np.percentile(
+            stats_per_orig_para['n_words_in_paragraph'], 75)
 
-        q1_sentence_counts = np.percentile(stats_per_orig_para['n_sentences_in_paragraph'], 25)
-        q3_sentence_counts = np.percentile(stats_per_orig_para['n_sentences_in_paragraph'], 75)
+        q1_sentence_counts = np.percentile(
+            stats_per_orig_para['n_sentences_in_paragraph'], 25)
+        q3_sentence_counts = np.percentile(
+            stats_per_orig_para['n_sentences_in_paragraph'], 75)
 
         for para_info in self._raw_path_handler.iter_all_paragraphs():
 
-            original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+            original_paragraph = self._raw_path_handler.get_original_paragraph(
+                para_info)
 
             if original_paragraph is None:
                 continue
@@ -501,7 +516,6 @@ class FeaturesExtractor:
             'sentence_count': itertools.islice(sentence_count_outliers, 5)
         }
 
-    
     def _get_stats_per_original_paragraph(self) -> Dict[str, Any]:
 
         n_words_in_paragraph = []
@@ -510,16 +524,17 @@ class FeaturesExtractor:
 
         for para_info in self._raw_path_handler.iter_all_paragraphs():
 
-            original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+            original_paragraph = self._raw_path_handler.get_original_paragraph(
+                para_info)
 
             if original_paragraph is None:
                 continue
 
             n_sentences_in_paragraph.append(len(original_paragraph.sentences))
-            
+
             word_counts = [len(self._text_processor.clean_text(sentence).split())
                            for sentence in original_paragraph.sentences.values()]
-            
+
             n_words_in_paragraph.append(sum(word_counts))
             n_words_in_sentence.extend(word_counts)
 
@@ -548,7 +563,8 @@ class FeaturesExtractor:
                 for paragraph_info in self._raw_path_handler.iter_paragraphs(spk_id, chap_id):
 
                     utterances_lengths.extend([
-                        self._audio_processor.length_in_sec_of_file(utt.wav_path)
+                        self._audio_processor.length_in_sec_of_file(
+                            utt.wav_path)
                         for utt in paragraph_info.utterances
                     ])
 

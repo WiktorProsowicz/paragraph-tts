@@ -8,7 +8,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 
-import yaml  # type: ignore
+import yaml
 
 UTILITIES_HOME = pathlib.Path(__file__).absolute().parent.as_posix()
 LOGGING_CONFIG_PATH = os.path.join(UTILITIES_HOME, 'res', 'logging_cfg.yaml')

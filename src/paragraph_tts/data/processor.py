@@ -7,7 +7,7 @@ import dataclasses
 
 import numpy as np
 import torch
-from comp_trans_tts import deepspeaker  # type: ignore
+from comp_trans_tts import deepspeaker
 from sklearn.preprocessing import StandardScaler
 import json
 
@@ -79,7 +79,8 @@ class LibriTTSRPreprocessor:
 
         self._output_path = output_path
         self._multi_speaker = multi_speaker
-        self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(embedders_device)
+        self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(
+            embedders_device)
         self._audio_processor = audio_prep.AudioProcessor(
             sr=22050,
             hop_length=256,
@@ -111,7 +112,8 @@ class LibriTTSRPreprocessor:
 
             if self._multi_speaker:
                 _logger().debug('Preparing speaker embedding for spk %d', speaker_id)
-                os.makedirs(os.path.join(self._output_path, 'spk_embeddings'), exist_ok=True)
+                os.makedirs(os.path.join(self._output_path,
+                            'spk_embeddings'), exist_ok=True)
                 self._prepare_spk_embedding(speaker_id)
 
     def save_metadata(self, metadata: Dict[str, Any]):
@@ -127,13 +129,15 @@ class LibriTTSRPreprocessor:
                                str(para_info.spk_id),
                                f'{para_info.chap_id}_{para_info.para_id}')
 
-        utterances_to_process = list(filter(self._should_process_utterance, para_info.utterances))
+        utterances_to_process = list(
+            filter(self._should_process_utterance, para_info.utterances))
 
         if not utterances_to_process:
             _logger().debug('No utterances to process for paragraph %s, skipping.', str(para_info))
             return
 
-        original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+        original_paragraph = self._raw_path_handler.get_original_paragraph(
+            para_info)
 
         if original_paragraph is None or (
                 not self._should_process_context(list(original_paragraph.sentences.values()))):
@@ -154,13 +158,15 @@ class LibriTTSRPreprocessor:
                                 str(para_info))
                 return
 
-            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            context_embeddings_dir = os.path.join(
+                dst_dir, 'context_embeddings')
             os.makedirs(context_embeddings_dir, exist_ok=True)
 
             utterances_to_process = utts_with_enriched_context
 
         else:
-            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            context_embeddings_dir = os.path.join(
+                dst_dir, 'context_embeddings')
             os.makedirs(context_embeddings_dir, exist_ok=True)
 
             _logger().debug('Preparing context embeddings for original paragraph %s',
@@ -225,7 +231,8 @@ class LibriTTSRPreprocessor:
         if len(context) < self._filter_cfg.min_paragraph_length:
             return False
 
-        clean_context = [self._text_processor.clean_text(sent) for sent in context]
+        clean_context = [self._text_processor.clean_text(
+            sent) for sent in context]
         word_count = sum(len(sent.split()) for sent in clean_context)
 
         if word_count > self._filter_cfg.max_words_in_context:
@@ -245,7 +252,8 @@ class LibriTTSRPreprocessor:
         if not self._enriched_contexts_path_hand.contains_contexts_for(utterance):
             return False
 
-        contexts = self._enriched_contexts_path_hand.get_contexts_for(utterance)
+        contexts = self._enriched_contexts_path_hand.get_contexts_for(
+            utterance)
 
         for context in contexts:
             if self._should_process_context(context.as_paragraph()):
@@ -284,7 +292,8 @@ class LibriTTSRPreprocessor:
                 if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
                     continue
 
-                contexts = self._enriched_contexts_path_hand.get_contexts_for(utt_info)
+                contexts = self._enriched_contexts_path_hand.get_contexts_for(
+                    utt_info)
 
                 for context_idx, context in enumerate(contexts):
 
@@ -322,7 +331,8 @@ class LibriTTSRPreprocessor:
         text_features = self._text_processor.tokenize_text(text)
 
         alignments = self._alignments_path_hand.get_alignment_for(utt_info)
-        word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(alignments)
+        word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(
+            alignments)
 
         if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
             _logger().debug('Alignment and text processor word counts do not match for utt %s, '
@@ -350,8 +360,8 @@ class LibriTTSRPreprocessor:
         spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
 
         spec_phone_spans = alignment_prep.get_phone_to_spec_spans(word_phoneme_int_mapping,
-                                                   text_features.word_phoneme_mapping,
-                                                   spec.shape[1])
+                                                                  text_features.word_phoneme_mapping,
+                                                                  spec.shape[1])
 
         phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
             spec_phone_spans
