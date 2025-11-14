@@ -286,35 +286,30 @@ class LibriTTSRPreprocessor:
         if not inputs:
             return
 
-        os.makedirs(inputs_path)
+        if self._enriched_contexts_path_hand:
 
-        for file_name, tensor in inputs.items():
-            torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
+            if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
+                return
 
-            if self._enriched_contexts_path_hand:
+            contexts = self._enriched_contexts_path_hand.get_contexts_for(
+                utt_info)
 
-                if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
+            for context_idx, context in enumerate(contexts):
+
+                if not self._should_process_context(context.as_paragraph()):
                     continue
 
-                contexts = self._enriched_contexts_path_hand.get_contexts_for(
-                    utt_info)
+                self._prepare_context_embeddings(
+                    context.as_paragraph(),
+                    os.path.join(context_embeddings_dir,
+                                 f'enriched_{utt_info.utt_id}_{context_idx}')
+                )
 
-                for context_idx, context in enumerate(contexts):
-
-                    if not self._should_process_context(context.as_paragraph()):
-                        continue
-
-                    self._prepare_context_embeddings(
-                        context.as_paragraph(),
-                        os.path.join(context_embeddings_dir,
-                                     f'enriched_{utt_info.utt_id}_{context_idx}')
-                    )
-
-                    self._save_enriched_context_metadata(
-                        context,
-                        os.path.join(context_embeddings_dir,
-                                     f'enriched_{utt_info.utt_id}_{context_idx}')
-                    )
+                self._save_enriched_context_metadata(
+                    context,
+                    os.path.join(context_embeddings_dir,
+                                 f'enriched_{utt_info.utt_id}_{context_idx}')
+                )
 
     def _save_enriched_context_metadata(self,
                                         context: ContextForUtterance,
