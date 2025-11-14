@@ -8,12 +8,12 @@ import os
 import hydra
 import omegaconf
 import soundfile
-import yaml  # type: ignore
+import yaml
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts import data
 from paragraph_tts import utils
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.data.preprocessing import text as text_prep
 
 RESULTS_DESC = """
 Generated at {time}.

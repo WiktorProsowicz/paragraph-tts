@@ -11,10 +11,10 @@ from typing import Any, Dict, Optional
 import hydra
 import omegaconf
 import tqdm
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import enrichment
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import enriched_context_dir_handler
 from paragraph_tts.utils.path import raw_libri_dir_handler

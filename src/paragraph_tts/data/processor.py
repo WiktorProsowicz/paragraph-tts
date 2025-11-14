@@ -11,14 +11,15 @@ from comp_trans_tts import deepspeaker
 from sklearn.preprocessing import StandardScaler
 import json
 
+from torch_dev_utils.tts import (text_prep, alignment_prep)
+from torch_dev_utils.text_preprocessing import embeddings
+
 from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
 from paragraph_tts.utils.path.enriched_context_dir_handler import (EnrichedContextDirHandler,
                                                                    ContextForUtterance)
-from paragraph_tts.data.preprocessing import alignment as alignment_prep
-from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.data.preprocessing import audio as audio_prep
 
 
@@ -90,7 +91,10 @@ class LibriTTSRPreprocessor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = text_prep.TextProcessor(embedders_device)
+        self._text_processor = text_prep.TextProcessor('microsoft/deberta-v2-xxlarge')
+        self._embedder = embeddings.BERTEmbedder('microsoft/deberta-v2-xxlarge',
+                                                 device=embedders_device,
+                                                 batch_size=16)
         self._filter_cfg = filter_cfg
 
     def run_for_speaker(self, speaker_id: int):
@@ -344,7 +348,7 @@ class LibriTTSRPreprocessor:
 
         phoneme_ids = self._text_processor.obtain_phoneme_ids(
             text_features.get_phoneme_sequence())
-        bert_embeddings = self._text_processor.obtain_bert_embeddings(
+        bert_embeddings = self._embedder.obtain_bert_embeddings(
             text_features.get_bert_token_sequence())
 
         bert_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
@@ -433,12 +437,12 @@ class LibriTTSRPreprocessor:
                             context_sentences)
             return
 
-        single_embeddings = self._text_processor.obtain_bert_embeddings_for_sentences(
+        single_embeddings = self._embedder.obtain_bert_embeddings_for_sentences(
             context_sentences
         )
 
         if len(context_sentences) > 1:
-            paired_embeddings = self._text_processor.obtain_paired_bert_embeddings(
+            paired_embeddings = self._embedder.obtain_paired_bert_embeddings(
                 context_sentences
             )
 

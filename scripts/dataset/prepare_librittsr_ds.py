@@ -16,7 +16,7 @@ from paragraph_tts.utils.path import (
     enriched_context_dir_handler,
     alignments_dir_handler)
 from paragraph_tts import data
-from paragraph_tts.data.preprocessing import text as text_prep
+from torch_dev_utils.tts import text_prep
 from paragraph_tts.data import librittsr_helpers
 
 

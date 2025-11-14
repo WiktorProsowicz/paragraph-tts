@@ -10,10 +10,11 @@ from typing import TypeAlias
 
 import matplotlib.pyplot as plt
 import numpy as np
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.data import preprocessing
 from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.data.preprocessing import audio as audio_prep
 from paragraph_tts.utils.path.raw_libri_dir_handler import ParagraphInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import UtteranceInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import OriginalParagraph
@@ -70,7 +71,7 @@ class FeaturesExtractor:
         self._raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(
             raw_ds_path
         )
-        self._audio_processor = preprocessing.audio.AudioProcessor(
+        self._audio_processor = audio_prep.AudioProcessor(
             sr=22050,
             hop_length=256,
             win_length=1025,
@@ -79,8 +80,7 @@ class FeaturesExtractor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = preprocessing.text.TextProcessor(
-            bert_device='cpu')
+        self._text_processor = text_prep.TextProcessor()
 
     def paragraph_as_lines(self, para_info: ParagraphInfo) -> List[str]:
         """Returns the paragraph as a list of lines (strings)."""
