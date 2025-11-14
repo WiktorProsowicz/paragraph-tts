@@ -1,6 +1,5 @@
+# -*- coding: utf-8 -*-
 """Contains definition of acoustic model's encoder module."""
-
-
 import torch
 from comp_trans_tts.model.transformers import conformer
 
@@ -41,11 +40,11 @@ class Encoder(torch.nn.Module):
             out_features=hidden_size
         )
 
-        SENTENCE_POS_EMB_DIM = 8
+        sentence_pos_emb_dim = 8
 
         self._sentence_pos_emb = torch.nn.Embedding(
             num_embeddings=4,
-            embedding_dim=SENTENCE_POS_EMB_DIM
+            embedding_dim=sentence_pos_emb_dim
         )
 
         self._bert_enc = torch.nn.Sequential(
@@ -55,7 +54,7 @@ class Encoder(torch.nn.Module):
         )
 
         self._prenet = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 3 + SENTENCE_POS_EMB_DIM + 1, hidden_size),
+            torch.nn.Linear(hidden_size * 3 + sentence_pos_emb_dim + 1, hidden_size),
             torch.nn.ReLU(),
             torch.nn.Dropout(p=prenet_dropout_rate),
             torch.nn.Linear(hidden_size, hidden_size),

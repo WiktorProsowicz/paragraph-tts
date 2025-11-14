@@ -1,12 +1,13 @@
+# -*- coding: utf-8 -*-
 """Contains utils for handling paths in processed LibriTTS-R dataset."""
-
-import os
-from typing import List, Iterator
 import dataclasses
-import json
 import enum
+import json
 import logging
+import os
 import sys
+from typing import Iterator
+from typing import List
 
 
 def _logger():
@@ -79,9 +80,10 @@ class UtteranceDataInfo:
 
 @dataclasses.dataclass
 class SpeakerNumericalStats:
-
+    """Contains paths containing speaker-specific numerical data."""
     f0_stats_pth: str
     energy_stats_pth: str
+
 
 @dataclasses.dataclass
 class SampleInfo:
@@ -174,7 +176,7 @@ class ProcessedLibriDirHandler:
 
     def _obtain_contexts_for_utterance(self,
                                        contexts_path: str,
-                                       utt_id: int) -> UtteranceContextInfo:
+                                       utt_id: int) -> List[UtteranceContextInfo]:
 
         contexts: List[UtteranceContextInfo] = []
 

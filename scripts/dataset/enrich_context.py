@@ -6,15 +6,17 @@ import logging
 import os
 import random
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import hydra
 import omegaconf
 import tqdm
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import enrichment
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import enriched_context_dir_handler
 from paragraph_tts.utils.path import raw_libri_dir_handler
@@ -25,11 +27,11 @@ def _logger():
 
 
 def _prepare_utterance_for_enrichment(
-        original_paragraph: Optional[raw_libri_dir_handler.OriginalParagraph],
-                                      utt_info: raw_libri_dir_handler.UtteranceInfo,
-                                      ds_metadata: librittsr_helpers.LibriTTSRMetadata
-                                      ) -> enrichment.UtteranceForEnrichment:
-    
+    original_paragraph: Optional[raw_libri_dir_handler.OriginalParagraph],
+        utt_info: raw_libri_dir_handler.UtteranceInfo,
+        ds_metadata: librittsr_helpers.LibriTTSRMetadata
+) -> enrichment.UtteranceForEnrichment:
+
     if original_paragraph is None:
         preceding_sentences = []
         following_sentences = []
@@ -59,13 +61,13 @@ def _prepare_utterance_for_enrichment(
     )
 
 
-def _enrich_utterance_and_save(enricher: enrichment.ContextEnricher,
-                               ds_metadata: librittsr_helpers.LibriTTSRMetadata,
-                               original_paragraph: raw_libri_dir_handler.OriginalParagraph,
-                               utt_info: raw_libri_dir_handler.UtteranceInfo,
-                               num_contexts_to_generate: int,
-                               output_path: str):
-
+def _enrich_utterance_and_save(
+        enricher: enrichment.ContextEnricher,
+        ds_metadata: librittsr_helpers.LibriTTSRMetadata,
+        original_paragraph: Optional[raw_libri_dir_handler.OriginalParagraph],
+        utt_info: raw_libri_dir_handler.UtteranceInfo,
+        num_contexts_to_generate: int,
+        output_path: str):
 
     utterance_for_enrichment = _prepare_utterance_for_enrichment(
         original_paragraph, utt_info, ds_metadata
@@ -154,7 +156,8 @@ def main(script_cfg: omegaconf.DictConfig):
             if split not in script_cfg.filters.choose_splits:
                 continue
 
-            original_paragraph = raw_path_handler.get_original_paragraph(para_info)
+            original_paragraph = raw_path_handler.get_original_paragraph(
+                para_info)
 
             if original_paragraph is not None:
                 context_len = len(original_paragraph.sentences)
@@ -182,24 +185,25 @@ def main(script_cfg: omegaconf.DictConfig):
     random.shuffle(utterances_to_enrich_l)
 
     utterances_to_enrich = itertools.islice(utterances_to_enrich_l,
-                                                script_cfg.max_enriched_utterances)
-    
+                                            script_cfg.max_enriched_utterances)
+
     num_utterances = sum(1 for _ in itertools.islice(utterances_to_enrich_l,
                                                      script_cfg.max_enriched_utterances))
 
     for utt_info, para_info in tqdm.tqdm(utterances_to_enrich,
-                               desc='Enriching context',
-                               dynamic_ncols=True,
-                               total=num_utterances,
-                               miniters=1,
-                               unit='utterances',
-                               colour='#115b80'):
+                                         desc='Enriching context',
+                                         dynamic_ncols=True,
+                                         total=num_utterances,
+                                         miniters=1,
+                                         unit='utterances',
+                                         colour='#115b80'):
 
         _logger().debug('Enriching utterance: %s', utt_info)
 
         _enrich_utterance_and_save(enricher,
                                    ds_metadata,
-                                   raw_path_handler.get_original_paragraph(para_info),
+                                   raw_path_handler.get_original_paragraph(
+                                       para_info),
                                    utt_info,
                                    script_cfg.num_contexts_to_generate,
                                    enriched_dir_handler.path_for_utt_contexts(utt_info))

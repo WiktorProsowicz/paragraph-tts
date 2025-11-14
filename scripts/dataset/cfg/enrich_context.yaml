@@ -7,20 +7,11 @@ max_paragraph_len: 6
 min_paragraph_len: 3
 num_contexts_to_generate: 3
 max_enriched_utterances: 1000
-should_retry_generate: true 
+should_retry_generate: true
 # Specify the criteria for filtering utterances to be enriched.
 filters:
   max_words_in_utterance: 100
-  choose_splits:
-    [
-      "dev-clean",
-      "dev-other",
-      "test-clean",
-      "test-other",
-      "train-clean-100",
-      "train-clean-360",
-      "train-other-500",
-    ]
+  choose_splits: [dev-clean, dev-other, test-clean, test-other, train-clean-100, train-clean-360, train-other-500]
   allow_fragmented_sentences: false
   # Maximum number of utterances in the original paragraph. (Choose only utterances lacking
   # sufficiently long context)

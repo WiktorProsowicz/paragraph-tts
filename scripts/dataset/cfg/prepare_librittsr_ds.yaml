@@ -19,16 +19,7 @@ filters:
   # Maximum number of words in either original or enriched context.
   max_words_in_context: 200
   # List of DS splits to be considered.
-  choose_splits:
-    [
-      "dev-clean",
-      "dev-other",
-      "test-clean",
-      "test-other",
-      "train-clean-100",
-      "train-clean-360",
-      "train-other-500",
-    ]
+  choose_splits: [dev-clean, dev-other, test-clean, test-other, train-clean-100, train-clean-360, train-other-500]
   allow_fragmented_sentences: true
   # Minimum duration of a sentence in seconds.
   min_utterance_duration: 1.0

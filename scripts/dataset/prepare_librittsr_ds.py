@@ -1,23 +1,18 @@
 # -*- coding: utf-8 -*-
 """Runs preprocessing on raw LibriTTS-R dataset and saves the preprocessed files."""
-
 import json
 import logging
 import os
-from typing import Any, Dict
 
-import tqdm
 import hydra
 import omegaconf
+import tqdm
 
-from paragraph_tts.utils import logging_utils
-from paragraph_tts.utils.path import (
-    raw_libri_dir_handler,
-    enriched_context_dir_handler,
-    alignments_dir_handler)
 from paragraph_tts import data
-from paragraph_tts.data.preprocessing import text as text_prep
-from paragraph_tts.data import librittsr_helpers
+from paragraph_tts.utils import logging_utils
+from paragraph_tts.utils.path import alignments_dir_handler
+from paragraph_tts.utils.path import enriched_context_dir_handler
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger():
@@ -32,7 +27,8 @@ def main(script_cfg: omegaconf.DictConfig):
     _logger().info('Config:\n%s',
                    json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
-    raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(script_cfg.raw_ds_path)
+    raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(
+        script_cfg.raw_ds_path)
     alignments_path_hand = alignments_dir_handler.AlignmentsDirHandler(
         script_cfg.alignments_path)
 

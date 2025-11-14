@@ -5,7 +5,6 @@ import dataclasses
 import logging
 import os
 import re
-import sys
 from typing import Dict
 from typing import Iterator
 from typing import List

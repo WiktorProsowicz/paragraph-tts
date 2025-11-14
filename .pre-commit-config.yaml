@@ -33,10 +33,14 @@ repos:
         args: [--in-place, --aggressive, --max-line-length=100]
 
   # Makes sure the python variables are used according to their types.
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.6.1
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        args: [--python-executable, .venv/bin/python, --config-file, pyproject.toml]
 
   # Checks whether the code is accepted by the pylint checker.
   - repo: local
@@ -47,7 +51,7 @@ repos:
         language: system
         types: [python]
         args:
-          - --ignore-paths=test/*
+          - --ignore-paths=.*/cbhg.py
           - --disable=fixme
           - --disable=too-few-public-methods
           - --disable=too-many-instance-attributes

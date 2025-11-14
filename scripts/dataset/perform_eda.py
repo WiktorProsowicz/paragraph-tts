@@ -8,12 +8,12 @@ import os
 import hydra
 import omegaconf
 import soundfile
-import yaml  # type: ignore
+import yaml
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts import data
 from paragraph_tts import utils
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.data.preprocessing import text as text_prep
 
 RESULTS_DESC = """
 Generated at {time}.
@@ -46,20 +46,24 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
 
     for example_type, paragraphs in feature_extractor.get_example_paragraphs().items():
 
-        examples_dir = os.path.join(output_dir, 'example_paragraphs', example_type)
+        examples_dir = os.path.join(
+            output_dir, 'example_paragraphs', example_type)
         os.makedirs(examples_dir, exist_ok=True)
 
         for para_idx, para_info in enumerate(paragraphs):
 
-            speaker, book = libri_metadata.get_speaker_and_book(para_info.spk_id, para_info.chap_id)
+            speaker, book = libri_metadata.get_speaker_and_book(
+                para_info.spk_id, para_info.chap_id)
 
-            para_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.txt')
+            para_path = os.path.join(
+                examples_dir, f'paragraph_{para_idx:03d}.txt')
             with open(para_path, 'w', encoding='utf-8') as para_f:
                 para_f.write(f'Paragraph ID: {para_info.para_id}\n')
                 para_f.write(f'Chapter ID: {para_info.chap_id}\n')
                 para_f.write(f'Speaker: {speaker.name}\n')
                 para_f.write(f'Book: {book.title}\n')
-                para_f.write(f'Is valid: {data.eda.is_paragraph_valid(para_info)}\n')
+                para_f.write(
+                    f'Is valid: {data.eda.is_paragraph_valid(para_info)}\n')
                 para_f.write(f'Is complete: {para_info.is_complete}\n')
 
                 for line in feature_extractor.paragraph_as_lines(para_info):
@@ -67,7 +71,8 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
 
                 if data.eda.is_paragraph_valid(para_info):
                     wav = feature_extractor.paragraph_as_waveform(para_info)
-                    wav_path = os.path.join(examples_dir, f'paragraph_{para_idx:03d}.wav')
+                    wav_path = os.path.join(
+                        examples_dir, f'paragraph_{para_idx:03d}.wav')
                     soundfile.write(wav_path, wav, samplerate=22050)
 
 
@@ -80,12 +85,15 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
     for stat_type in outliers:
         for outlier_type, utterances in outliers[stat_type].items():
 
-            outliers_dir = os.path.join(output_dir, 'outlier_utterances', stat_type)
+            outliers_dir = os.path.join(
+                output_dir, 'outlier_utterances', stat_type)
             os.makedirs(outliers_dir, exist_ok=True)
 
             for utt_idx, utt_info in enumerate(utterances):
-                utt_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.txt')
-                wav_path = os.path.join(outliers_dir, f'{outlier_type}_{utt_idx:03d}.wav')
+                utt_path = os.path.join(
+                    outliers_dir, f'{outlier_type}_{utt_idx:03d}.txt')
+                wav_path = os.path.join(
+                    outliers_dir, f'{outlier_type}_{utt_idx:03d}.wav')
 
                 text = text_prep.TextProcessor.load_text(utt_info.text_path)
 
@@ -102,27 +110,30 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
 
 def _save_outlier_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
                              output_dir: str):
-    
+
     _logger().info('Saving outlier paragraphs...')
 
     outliers = feature_extractor.get_outliers_original_paragraphs()
 
     for stat_type, paragraphs in outliers.items():
 
-        outliers_dir = os.path.join(output_dir, 'outlier_paragraphs', stat_type)
+        outliers_dir = os.path.join(
+            output_dir, 'outlier_paragraphs', stat_type)
         os.makedirs(outliers_dir, exist_ok=True)
 
         for para_idx, para_info in enumerate(paragraphs):
 
-            para_path = os.path.join(outliers_dir, f'paragraph_{para_idx:03d}.txt')
+            para_path = os.path.join(
+                outliers_dir, f'paragraph_{para_idx:03d}.txt')
             with open(para_path, 'w', encoding='utf-8') as para_f:
-                
+
                 para_f.write(f'Paragraph ID: {para_info.para_id}\n')
                 para_f.write(f'Chapter ID: {para_info.chap_id}\n')
                 para_f.write(f'Speaker ID: {para_info.spk_id}\n')
 
                 for sent_idx, sentence in para_info.sentences.items():
                     para_f.write(f'{sent_idx}: {sentence}\n')
+
 
 @hydra.main(version_base=None, config_path='cfg', config_name='perform_eda')
 def main(script_cfg: omegaconf.DictConfig):
@@ -157,7 +168,8 @@ def main(script_cfg: omegaconf.DictConfig):
     _logger().info('Collecting original paragraphs stats...')
     overall_stats['original_paragraphs_stats'] = feature_extractor.get_original_paragraphs_stats()
 
-    overall_stats_path = os.path.join(script_cfg.output_dir, 'overall_stats.yaml')
+    overall_stats_path = os.path.join(
+        script_cfg.output_dir, 'overall_stats.yaml')
     with open(overall_stats_path, 'w', encoding='utf-8') as stats_f:
         yaml.dump(overall_stats, stats_f)
 
@@ -178,7 +190,8 @@ def main(script_cfg: omegaconf.DictConfig):
 
     with open(os.path.join(script_cfg.output_dir, 'README.txt'), 'w', encoding='utf-8') as readme_f:
         readme_f.write(RESULTS_DESC.format(
-            time=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
+            time=datetime.datetime.now(
+                datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
         ))
 
 

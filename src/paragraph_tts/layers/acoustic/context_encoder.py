@@ -1,5 +1,5 @@
+# -*- coding: utf-8 -*-
 """Contains definition of context encoder producing context embeddings for acoustic model."""
-
 import torch
 
 from paragraph_tts.layers.shared import cbhg

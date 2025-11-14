@@ -1,18 +1,19 @@
+# -*- coding: utf-8 -*-
 """Runs training pipeline for acoustic model.
 
 The script supports logging MLFlow experiment parameters and saves checkpoints.
 """
-
 import logging
-import hydra
-import omegaconf
 import os
+from typing import List
 
+import hydra
 import lightning.pytorch as pl
-from lightning.pytorch import loggers as pl_loggers
-from lightning.pytorch import callbacks as pl_callbacks
-from lightning.pytorch import profilers as pl_profilers
 import mlflow
+import omegaconf
+from lightning.pytorch import callbacks as pl_callbacks
+from lightning.pytorch import loggers as pl_loggers
+from lightning.pytorch import profilers as pl_profilers
 
 from paragraph_tts.data import loading as data_loading
 from paragraph_tts.models import acoustic as acoustic_model
@@ -50,14 +51,14 @@ def main(script_cfg: omegaconf.DictConfig):
     if script_cfg.train_cfg.load_model_from_checkpoint is None:
 
         model = acoustic_model.AcousticModel(
-            model_cfg=omegaconf.OmegaConf.to_container(script_cfg.model_cfg),
-            optim_cfg=omegaconf.OmegaConf.to_container(script_cfg.optim_cfg),
-            train_cfg=omegaconf.OmegaConf.to_container(script_cfg.train_cfg),
-            data_cfg=omegaconf.OmegaConf.to_container(script_cfg.data_cfg)
+            model_cfg=omegaconf.OmegaConf.to_container(script_cfg.model_cfg),  # type: ignore
+            optim_cfg=omegaconf.OmegaConf.to_container(script_cfg.optim_cfg),  # type: ignore
+            train_cfg=omegaconf.OmegaConf.to_container(script_cfg.train_cfg),  # type: ignore
+            data_cfg=omegaconf.OmegaConf.to_container(script_cfg.data_cfg)  # type: ignore
         )
 
     else:
-        model = acoustic_model.AcousticModel.load_from_checkpoint(
+        model = acoustic_model.AcousticModel.load_from_checkpoint(  # pylint: disable=E1120
             script_cfg.train_cfg.load_model_from_checkpoint
         )
 
@@ -91,7 +92,7 @@ def main(script_cfg: omegaconf.DictConfig):
         limit_val_batches = None
         limit_test_batches = None
 
-        callbacks = [pl_callbacks.ModelSummary(max_depth=2),]
+        callbacks: List[pl_callbacks.Callback] = [pl_callbacks.ModelSummary(max_depth=2),]
 
         if script_cfg.run_cfg.dev_run:
             profiler = pl_profilers.PyTorchProfiler(

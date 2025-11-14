@@ -1,16 +1,16 @@
+# -*- coding: utf-8 -*-
 """Prepares audio/transcript pairs for MFA alignment."""
-
-import os
-import logging
 import json
+import logging
+import os
 
 import hydra
 import omegaconf
 import tqdm
+from torch_dev_utils.tts import text_prep
 
-from paragraph_tts.utils.path import raw_libri_dir_handler
-from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.utils import logging_utils
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger():
@@ -27,7 +27,8 @@ def main(cfg: omegaconf.DictConfig):
 
     os.makedirs(cfg.output_dir, exist_ok=True)
 
-    raw_ds_handler = raw_libri_dir_handler.RawLibriDirHandler(cfg.raw_dataset_path)
+    raw_ds_handler = raw_libri_dir_handler.RawLibriDirHandler(
+        cfg.raw_dataset_path)
 
     def iter_all_utterances():
 
@@ -37,7 +38,8 @@ def main(cfg: omegaconf.DictConfig):
     for utt_info in tqdm.tqdm(iter_all_utterances()):
 
         dst_dir = os.path.join(cfg.output_dir,
-                               raw_ds_handler.get_split_for_speaker(utt_info.spk_id),
+                               raw_ds_handler.get_split_for_speaker(
+                                   utt_info.spk_id),
                                str(utt_info.spk_id),
                                str(utt_info.chap_id))
 
@@ -56,7 +58,8 @@ def main(cfg: omegaconf.DictConfig):
         text = text_prep.TextProcessor.clean_text(text)
 
         text = text.lower().strip()
-        text = ''.join(filter(lambda x: x in 'abcdefghijklmnopqrstuvwxyz ', text))
+        text = ''.join(
+            filter(lambda x: x in 'abcdefghijklmnopqrstuvwxyz ', text))
 
         os.makedirs(dst_dir, exist_ok=True)
 
@@ -69,8 +72,8 @@ def main(cfg: omegaconf.DictConfig):
                        output_wav_path)
         else:
             os.symlink(os.path.abspath(utt_info.wav_path),
-                    output_wav_path)
+                       output_wav_path)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()  # pylint: disable=no-value-for-parameter

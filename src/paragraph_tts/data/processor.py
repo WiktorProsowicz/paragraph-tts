@@ -1,25 +1,29 @@
 # -*- coding: utf-8 -*-
 """Contains classes for processing/reading LibriTTS-R dataset."""
-from typing import Dict, List, Optional, Any
+import dataclasses
+import json
 import logging
 import os
-import dataclasses
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import numpy as np
 import torch
-from comp_trans_tts import deepspeaker  # type: ignore
+from comp_trans_tts import deepspeaker
 from sklearn.preprocessing import StandardScaler
-import json
+from torch_dev_utils.text_preprocessing import embeddings
+from torch_dev_utils.tts import alignment_prep
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.utils.path import raw_libri_dir_handler
-from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
-from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
-from paragraph_tts.utils.path.enriched_context_dir_handler import (EnrichedContextDirHandler,
-                                                                   ContextForUtterance)
-from paragraph_tts.data.preprocessing import alignment as alignment_prep
-from paragraph_tts.data.preprocessing import text as text_prep
 from paragraph_tts.data.preprocessing import audio as audio_prep
+from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
+from paragraph_tts.utils.path.enriched_context_dir_handler import ContextForUtterance
+from paragraph_tts.utils.path.enriched_context_dir_handler import EnrichedContextDirHandler
+from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 
 
 def _logger():
@@ -79,7 +83,8 @@ class LibriTTSRPreprocessor:
 
         self._output_path = output_path
         self._multi_speaker = multi_speaker
-        self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(embedders_device)
+        self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(
+            embedders_device)
         self._audio_processor = audio_prep.AudioProcessor(
             sr=22050,
             hop_length=256,
@@ -89,7 +94,11 @@ class LibriTTSRPreprocessor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = text_prep.TextProcessor(embedders_device)
+        self._text_processor = text_prep.TextProcessor(
+            'microsoft/deberta-v2-xxlarge')
+        self._embedder = embeddings.BERTEmbedder('microsoft/deberta-v2-xxlarge',
+                                                 device=embedders_device,
+                                                 batch_size=16)
         self._filter_cfg = filter_cfg
 
     def run_for_speaker(self, speaker_id: int):
@@ -111,7 +120,8 @@ class LibriTTSRPreprocessor:
 
             if self._multi_speaker:
                 _logger().debug('Preparing speaker embedding for spk %d', speaker_id)
-                os.makedirs(os.path.join(self._output_path, 'spk_embeddings'), exist_ok=True)
+                os.makedirs(os.path.join(self._output_path,
+                            'spk_embeddings'), exist_ok=True)
                 self._prepare_spk_embedding(speaker_id)
 
     def save_metadata(self, metadata: Dict[str, Any]):
@@ -127,13 +137,15 @@ class LibriTTSRPreprocessor:
                                str(para_info.spk_id),
                                f'{para_info.chap_id}_{para_info.para_id}')
 
-        utterances_to_process = list(filter(self._should_process_utterance, para_info.utterances))
+        utterances_to_process = list(
+            filter(self._should_process_utterance, para_info.utterances))
 
         if not utterances_to_process:
             _logger().debug('No utterances to process for paragraph %s, skipping.', str(para_info))
             return
 
-        original_paragraph = self._raw_path_handler.get_original_paragraph(para_info)
+        original_paragraph = self._raw_path_handler.get_original_paragraph(
+            para_info)
 
         if original_paragraph is None or (
                 not self._should_process_context(list(original_paragraph.sentences.values()))):
@@ -154,13 +166,15 @@ class LibriTTSRPreprocessor:
                                 str(para_info))
                 return
 
-            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            context_embeddings_dir = os.path.join(
+                dst_dir, 'context_embeddings')
             os.makedirs(context_embeddings_dir, exist_ok=True)
 
             utterances_to_process = utts_with_enriched_context
 
         else:
-            context_embeddings_dir = os.path.join(dst_dir, 'context_embeddings')
+            context_embeddings_dir = os.path.join(
+                dst_dir, 'context_embeddings')
             os.makedirs(context_embeddings_dir, exist_ok=True)
 
             _logger().debug('Preparing context embeddings for original paragraph %s',
@@ -197,10 +211,8 @@ class LibriTTSRPreprocessor:
 
         n_words = len(text.split())
 
-        if n_words > self._filter_cfg.max_words_in_utterance:
-            return False
-
-        if n_words < self._filter_cfg.min_words_in_utterance:
+        if (n_words < self._filter_cfg.min_words_in_utterance or
+                n_words > self._filter_cfg.max_words_in_utterance):
             return False
 
         if not self._filter_cfg.allow_fragmented_sentences:
@@ -209,10 +221,8 @@ class LibriTTSRPreprocessor:
 
         dur = self._audio_processor.length_in_sec_of_file(utt_info.wav_path)
 
-        if dur < self._filter_cfg.min_utterance_duration:
-            return False
-
-        if dur > self._filter_cfg.max_utterance_duration:
+        if (dur < self._filter_cfg.min_utterance_duration or
+                dur > self._filter_cfg.max_utterance_duration):
             return False
 
         return True
@@ -225,7 +235,8 @@ class LibriTTSRPreprocessor:
         if len(context) < self._filter_cfg.min_paragraph_length:
             return False
 
-        clean_context = [self._text_processor.clean_text(sent) for sent in context]
+        clean_context = [self._text_processor.clean_text(
+            sent) for sent in context]
         word_count = sum(len(sent.split()) for sent in clean_context)
 
         if word_count > self._filter_cfg.max_words_in_context:
@@ -245,7 +256,8 @@ class LibriTTSRPreprocessor:
         if not self._enriched_contexts_path_hand.contains_contexts_for(utterance):
             return False
 
-        contexts = self._enriched_contexts_path_hand.get_contexts_for(utterance)
+        contexts = self._enriched_contexts_path_hand.get_contexts_for(
+            utterance)
 
         for context in contexts:
             if self._should_process_context(context.as_paragraph()):
@@ -284,7 +296,8 @@ class LibriTTSRPreprocessor:
                 if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
                     continue
 
-                contexts = self._enriched_contexts_path_hand.get_contexts_for(utt_info)
+                contexts = self._enriched_contexts_path_hand.get_contexts_for(
+                    utt_info)
 
                 for context_idx, context in enumerate(contexts):
 
@@ -322,7 +335,8 @@ class LibriTTSRPreprocessor:
         text_features = self._text_processor.tokenize_text(text)
 
         alignments = self._alignments_path_hand.get_alignment_for(utt_info)
-        word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(alignments)
+        word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(
+            alignments, trim_silences=True)
 
         if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
             _logger().debug('Alignment and text processor word counts do not match for utt %s, '
@@ -334,7 +348,7 @@ class LibriTTSRPreprocessor:
 
         phoneme_ids = self._text_processor.obtain_phoneme_ids(
             text_features.get_phoneme_sequence())
-        bert_embeddings = self._text_processor.obtain_bert_embeddings(
+        bert_embeddings = self._embedder.obtain_bert_embeddings(
             text_features.get_bert_token_sequence())
 
         bert_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
@@ -349,9 +363,10 @@ class LibriTTSRPreprocessor:
         wav = self._audio_processor.load_wav(utt_info.wav_path)
         spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
 
-        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(word_phoneme_int_mapping,
-                                                   text_features.word_phoneme_mapping,
-                                                   spec.shape[1])
+        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(
+            word_phoneme_int_mapping,
+            text_features.word_phoneme_mapping,
+            spec.shape[1])
 
         phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
             spec_phone_spans
@@ -423,12 +438,12 @@ class LibriTTSRPreprocessor:
                             context_sentences)
             return
 
-        single_embeddings = self._text_processor.obtain_bert_embeddings_for_sentences(
+        single_embeddings = self._embedder.obtain_bert_embeddings_for_sentences(
             context_sentences
         )
 
         if len(context_sentences) > 1:
-            paired_embeddings = self._text_processor.obtain_paired_bert_embeddings(
+            paired_embeddings = self._embedder.obtain_paired_bert_embeddings(
                 context_sentences
             )
 
@@ -454,14 +469,14 @@ class LibriTTSRPreprocessor:
                             speaker_id)
             return
 
-        embeddings: List[np.ndarray] = []
+        spk_embeddings: List[np.ndarray] = []
 
         for utterance_info in self._raw_path_handler.iter_utterances_for_spk(speaker_id):
             embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
                 utterance_info.wav_path)
-            embeddings.append(self._spk_embedder(embedder_input)[0])
+            spk_embeddings.append(self._spk_embedder(embedder_input)[0])
 
-        final_embedding = np.mean(embeddings, axis=0)
+        final_embedding = np.mean(spk_embeddings, axis=0)
 
         torch.save(torch.tensor(final_embedding),
                    embedding_path)
