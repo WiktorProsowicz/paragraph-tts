@@ -1,7 +1,7 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for visualization during training/inference."""
-
-import torch
 import matplotlib.pyplot as plt
+import torch
 
 
 def plot_spectrograms(pred_spec: torch.Tensor,
@@ -32,6 +32,7 @@ def plot_spectrograms(pred_spec: torch.Tensor,
 
     return fig
 
+
 def plot_spec_text_alignment(alignment: torch.Tensor):
     """Plots alignment matrix between text and spectrogram frames."""
 
@@ -46,6 +47,7 @@ def plot_spec_text_alignment(alignment: torch.Tensor):
 
     return fig
 
+
 def plot_contours(pred_contour: torch.Tensor,
                   target_contour: torch.Tensor,
                   contour_name: str):
@@ -56,12 +58,12 @@ def plot_contours(pred_contour: torch.Tensor,
     max_length = max(pred_contour.shape[0], target_contour.shape[0])
 
     pred_contour = torch.nn.functional.pad(pred_contour,
-                                          (0, max_length - pred_contour.shape[0]),
-                                          value=0.0)
+                                           (0, max_length - pred_contour.shape[0]),
+                                           value=0.0)
     target_contour = torch.nn.functional.pad(target_contour,
-                                            (0, max_length - target_contour.shape[0]),
-                                            value=0.0)
-    
+                                             (0, max_length - target_contour.shape[0]),
+                                             value=0.0)
+
     ax.plot(pred_contour.cpu().numpy(), label='Predicted', color='blue')
     ax.plot(target_contour.cpu().numpy(), label='Target', color='orange')
     ax.set_title(f'{contour_name} Contours')

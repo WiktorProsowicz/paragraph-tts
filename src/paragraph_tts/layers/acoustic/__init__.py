@@ -1,3 +1,5 @@
-from . import encoder
-from . import decoder
+# -*- coding: utf-8 -*-
+"""Contains acoustic model architecture and training pipeline."""
 from . import context_encoder
+from . import decoder
+from . import encoder

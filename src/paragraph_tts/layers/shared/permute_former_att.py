@@ -1,10 +1,8 @@
+# -*- coding: utf-8 -*-
 """Contains implementation of PermuteFormer Multi-Head Attention module."""
-
+import torch
 from fast_transformers.attention import linear_attention
 from fast_transformers.feature_maps import fourier_features
-import matplotlib.pyplot as plt
-
-import torch
 
 
 class PermuteFormerMHA(linear_attention.LinearAttention):
@@ -15,7 +13,7 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
                  num_heads: int,
                  feature_map_dim: int):
 
-        assert d_model % num_heads == 0, "d_model % num_heads should be zero."
+        assert d_model % num_heads == 0, 'd_model % num_heads should be zero.'
 
         def feature_map_factory(query_dims):
             return fourier_features.Favor(query_dims, feature_map_dim)
@@ -26,8 +24,8 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
         self._feature_map_dim = feature_map_dim
 
         permutation = self._generate_permutation_sequence(num_heads,
-                                                                feature_map_dim,
-                                                                max_seq_length=5000)
+                                                          feature_map_dim,
+                                                          max_seq_length=5000)
         self._permutation = torch.nn.Parameter(permutation, requires_grad=False)
 
         self._q_proj = torch.nn.Linear(d_model, d_model, bias=False)

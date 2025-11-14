@@ -13,13 +13,13 @@ import numpy as np
 from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.data.preprocessing import audio as audio_prep
+from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path.raw_libri_dir_handler import OriginalParagraph
 from paragraph_tts.utils.path.raw_libri_dir_handler import ParagraphInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import UtteranceInfo
-from paragraph_tts.utils.path.raw_libri_dir_handler import OriginalParagraph
 
-_FixedLengthArrayType: TypeAlias = List[float] | List[int ] | np.ndarray
+_FixedLengthArrayType: TypeAlias = List[float] | List[int] | np.ndarray
 
 
 def is_paragraph_valid(para_info: ParagraphInfo) -> bool:
@@ -296,32 +296,7 @@ class FeaturesExtractor:
 
         figures = {}
 
-        utt_stats_per_speaker = self._get_stats_per_speaker()
-        bins = min(100, len(utt_stats_per_speaker['num_utt']))
-
-        fig, ax = plt.subplots()
-        ax.hist(utt_stats_per_speaker['num_utt'], bins=bins)
-        ax.set_title('Number of utterances per speaker')
-        ax.set_xlabel('Number of utterances')
-        ax.set_ylabel('Number of speakers')
-
-        figures['num_utterances_per_speaker'] = fig
-
-        fig, ax = plt.subplots()
-        ax.hist(np.array(utt_stats_per_speaker['total_dur']) / 60.0, bins=bins)
-        ax.set_title('Total duration (minutes) of utterances per speaker')
-        ax.set_xlabel('Total duration (minutes)')
-        ax.set_ylabel('Number of speakers')
-
-        figures['total_duration_minutes_per_speaker'] = fig
-
-        fig, ax = plt.subplots()
-        ax.hist(utt_stats_per_speaker['num_paragraphs'], bins=bins)
-        ax.set_title('Number of paragraphs per speaker')
-        ax.set_xlabel('Number of paragraphs')
-        ax.set_ylabel('Number of speakers')
-
-        figures['num_paragraphs_per_speaker'] = fig
+        figures.update(self._get_speaker_figures())
 
         stats_per_utterance = self._get_stats_per_utterance()
 
@@ -515,6 +490,39 @@ class FeaturesExtractor:
             'word_count': itertools.islice(word_count_outliers, 5),
             'sentence_count': itertools.islice(sentence_count_outliers, 5)
         }
+
+    def _get_speaker_figures(self) -> Dict[str, plt.Figure]:
+
+        figures: Dict[str, plt.Figure] = {}
+
+        utt_stats_per_speaker = self._get_stats_per_speaker()
+        bins = min(100, len(utt_stats_per_speaker['num_utt']))
+
+        fig, ax = plt.subplots()
+        ax.hist(utt_stats_per_speaker['num_utt'], bins=bins)
+        ax.set_title('Number of utterances per speaker')
+        ax.set_xlabel('Number of utterances')
+        ax.set_ylabel('Number of speakers')
+
+        figures['num_utterances_per_speaker'] = fig
+
+        fig, ax = plt.subplots()
+        ax.hist(np.array(utt_stats_per_speaker['total_dur']) / 60.0, bins=bins)
+        ax.set_title('Total duration (minutes) of utterances per speaker')
+        ax.set_xlabel('Total duration (minutes)')
+        ax.set_ylabel('Number of speakers')
+
+        figures['total_duration_minutes_per_speaker'] = fig
+
+        fig, ax = plt.subplots()
+        ax.hist(utt_stats_per_speaker['num_paragraphs'], bins=bins)
+        ax.set_title('Number of paragraphs per speaker')
+        ax.set_xlabel('Number of paragraphs')
+        ax.set_ylabel('Number of speakers')
+
+        figures['num_paragraphs_per_speaker'] = fig
+
+        return figures
 
     def _get_stats_per_original_paragraph(self) -> Dict[str, Any]:
 

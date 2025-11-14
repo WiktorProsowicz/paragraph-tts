@@ -1,6 +1,8 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for inference with trained models."""
-
-from typing import List, Callable, Optional
+from typing import Callable
+from typing import List
+from typing import Optional
 
 import numpy as np
 import torch

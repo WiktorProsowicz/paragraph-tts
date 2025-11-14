@@ -1,20 +1,21 @@
+# -*- coding: utf-8 -*-
 """Contains processed LibriTTS-R dataset loader."""
-
 import logging
-
-import torch
-from typing import List, Dict, Tuple
 import random
-import numpy as np
+from typing import Dict
+from typing import List
 from typing import Optional
+from typing import Tuple
 
 import lightning.pytorch as pl
-from comp_trans_tts.preprocessor import preprocessor as ctt_preprocessor
+import torch
 
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
+
 def _logger():
     return logging.getLogger(__name__)
+
 
 class _DataSet(torch.utils.data.Dataset):
     """Loads serialized data from disk."""

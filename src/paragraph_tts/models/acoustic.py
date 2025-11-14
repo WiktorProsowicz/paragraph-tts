@@ -1,19 +1,20 @@
+# -*- coding: utf-8 -*-
 """Contains definition of acoustic model training/inference pipelines."""
-
-from typing import Callable, Dict, Any, Optional
 import logging
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import lightning.pytorch as pl
 import torch
 from comp_trans_tts.model import modules as ctt_modules
-from comp_trans_tts.model import loss as ctt_loss
 from speechbrain.inference.vocoders import HIFIGAN
 
 from paragraph_tts.layers import acoustic as acoustic_layers
 from paragraph_tts.models import utils as model_utils
+from paragraph_tts.utils import inference as inference_utils
 from paragraph_tts.utils import neural as neural_utils
 from paragraph_tts.utils import visualization as viz_utils
-from paragraph_tts.utils import inference as inference_utils
 
 
 def _logger():
@@ -61,8 +62,8 @@ class AcousticModel(pl.LightningModule):
         """Sets up optimizer from config."""
 
         opt = model_utils.optimizer_from_cfg(self._optim_cfg,
-                                              self.parameters())
-        
+                                             self.parameters())
+
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
             opt, gamma=self._optim_cfg['lr_decay']
         )
@@ -101,11 +102,11 @@ class AcousticModel(pl.LightningModule):
         enc_output_enriched = enc_output + context_output
 
         forced_args: Dict[str, Optional[torch.Tensor]] = {
-                'explicit_duration': None,
-                'pitch_target': None,
-                'energy_target': None
-            }
-        
+            'explicit_duration': None,
+            'pitch_target': None,
+            'energy_target': None
+        }
+
         if use_teacher_forcing:
 
             forced_args = {
@@ -169,7 +170,7 @@ class AcousticModel(pl.LightningModule):
                                         'training',
                                         sample_idx)
 
-        return sum(losses.values()) # type: ignore
+        return sum(losses.values())  # type: ignore
 
     def validation_step(self,  # pylint: disable=arguments-differ
                         batch: Dict[str, torch.Tensor],
@@ -190,8 +191,8 @@ class AcousticModel(pl.LightningModule):
 
         if self._should_visualize(batch_idx, training=False):
 
-            hifi_gan = HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-libritts-22050Hz",
-                                            run_opts={"device": self.device})
+            hifi_gan = HIFIGAN.from_hparams(source='speechbrain/tts-hifigan-libritts-22050Hz',
+                                            run_opts={'device': self.device})
 
             for sample_idx in range(min(10, self._data_cfg['batch_size'])):
 
@@ -220,7 +221,7 @@ class AcousticModel(pl.LightningModule):
                            sample_idx: int) -> None:
         """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
 
-        tensorboard = self.loggers[1].experiment # type: ignore
+        tensorboard = self.loggers[1].experiment  # type: ignore
 
         _logger().debug('Visualizing outputs for sample %d (label=%s).',
                         sample_idx, base_label)
@@ -279,10 +280,10 @@ class AcousticModel(pl.LightningModule):
 
         if hifi_gan is None:
             return
-        
+
         if base_label != 'inference':
             mel_len = int(batch['input_spec_length'][sample_idx].item())
-        
+
         else:
             san_dur = inference_utils.sanitize_predicted_durations(
                 model_output['predicted_duration'],
@@ -291,7 +292,7 @@ class AcousticModel(pl.LightningModule):
 
         wav = inference_utils.transform_mel_to_wav(
             model_output['pred_mel_spec'][sample_idx][:, :mel_len],
-            lambda x: hifi_gan.decode_batch(x),
+            hifi_gan.decode_batch,
             split_spec_by_silences=True
         )
 
@@ -305,7 +306,7 @@ class AcousticModel(pl.LightningModule):
 
         wav = inference_utils.transform_mel_to_wav(
             batch['input_spec'][sample_idx][:, :mel_len],
-            lambda x: hifi_gan.decode_batch(x),
+            hifi_gan.decode_batch,
             split_spec_by_silences=True
         )
 

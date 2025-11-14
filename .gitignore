@@ -8,3 +8,4 @@ outputs/
 log/
 mlruns/
 tensorboard/
+.mypy_cache/

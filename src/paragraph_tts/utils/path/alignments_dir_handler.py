@@ -1,7 +1,7 @@
+# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in alignments directory for LibriTTS-R dataset."""
-
-from typing import Dict
 import os
+from typing import Dict
 
 import tgt
 

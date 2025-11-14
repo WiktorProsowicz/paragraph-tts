@@ -51,7 +51,7 @@ repos:
         language: system
         types: [python]
         args:
-          - --ignore-paths=test/*
+          - --ignore-paths=.*/cbhg.py
           - --disable=fixme
           - --disable=too-few-public-methods
           - --disable=too-many-instance-attributes

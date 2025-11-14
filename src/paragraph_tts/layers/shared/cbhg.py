@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Contains definition of Tacotron CBHG module.
 
 The code has been adapted from
@@ -6,7 +7,6 @@ https://github.com/dykyivladk1/tacotron/tree/main
 The module was originally proposed in the paper:
 https://arxiv.org/abs/1703.10135
 """
-
 import torch
 import torch.nn as nn
 

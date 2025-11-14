@@ -1,8 +1,9 @@
+# -*- coding: utf-8 -*-
 """Contains utilities used by trainable models."""
-
-from typing import Dict, Any
 import logging
 import sys
+from typing import Any
+from typing import Dict
 
 import torch
 

@@ -1,6 +1,5 @@
+# -*- coding: utf-8 -*-
 """Contains definition of acoustic model's decoder module."""
-
-
 import torch
 from comp_trans_tts.model.transformers import conformer
 
@@ -52,7 +51,7 @@ class Decoder(torch.nn.Module):
                 encoder_output: torch.Tensor,
                 input_length: torch.Tensor) -> torch.Tensor:
         """Generates mel-spectrogram frames from encoded linguistic representations.
-        
+
         Args:
             encoder_outputs: Tensor of shape [B, L, H] containing encoded linguistic reprs.
             input_lengths: Tensor of shape [B] containing lengths of the input sequences.

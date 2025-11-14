@@ -1,16 +1,16 @@
+# -*- coding: utf-8 -*-
 """Prepares audio/transcript pairs for MFA alignment."""
-
-import os
-import logging
 import json
+import logging
+import os
 
 import hydra
 import omegaconf
 import tqdm
 from torch_dev_utils.tts import text_prep
 
-from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils import logging_utils
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger():
@@ -75,5 +75,5 @@ def main(cfg: omegaconf.DictConfig):
                        output_wav_path)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()  # pylint: disable=no-value-for-parameter

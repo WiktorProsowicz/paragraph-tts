@@ -6,7 +6,9 @@ import logging
 import os
 import random
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import hydra
 import omegaconf

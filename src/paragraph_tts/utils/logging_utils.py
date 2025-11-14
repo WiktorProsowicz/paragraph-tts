@@ -6,7 +6,6 @@ import os
 import pathlib
 from typing import Any
 from typing import Dict
-from typing import List
 
 import yaml
 

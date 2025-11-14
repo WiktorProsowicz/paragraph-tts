@@ -1,26 +1,29 @@
 # -*- coding: utf-8 -*-
 """Contains classes for processing/reading LibriTTS-R dataset."""
-from typing import Dict, List, Optional, Any
+import dataclasses
+import json
 import logging
 import os
-import dataclasses
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import numpy as np
 import torch
 from comp_trans_tts import deepspeaker
 from sklearn.preprocessing import StandardScaler
-import json
-
-from torch_dev_utils.tts import (text_prep, alignment_prep)
 from torch_dev_utils.text_preprocessing import embeddings
+from torch_dev_utils.tts import alignment_prep
+from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import librittsr_helpers
-from paragraph_tts.utils.path import raw_libri_dir_handler
-from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
-from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
-from paragraph_tts.utils.path.enriched_context_dir_handler import (EnrichedContextDirHandler,
-                                                                   ContextForUtterance)
 from paragraph_tts.data.preprocessing import audio as audio_prep
+from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path.alignments_dir_handler import AlignmentsDirHandler
+from paragraph_tts.utils.path.enriched_context_dir_handler import ContextForUtterance
+from paragraph_tts.utils.path.enriched_context_dir_handler import EnrichedContextDirHandler
+from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 
 
 def _logger():
@@ -91,7 +94,8 @@ class LibriTTSRPreprocessor:
             fmax=8000,
             trim_top_db=23
         )
-        self._text_processor = text_prep.TextProcessor('microsoft/deberta-v2-xxlarge')
+        self._text_processor = text_prep.TextProcessor(
+            'microsoft/deberta-v2-xxlarge')
         self._embedder = embeddings.BERTEmbedder('microsoft/deberta-v2-xxlarge',
                                                  device=embedders_device,
                                                  batch_size=16)
@@ -207,10 +211,8 @@ class LibriTTSRPreprocessor:
 
         n_words = len(text.split())
 
-        if n_words > self._filter_cfg.max_words_in_utterance:
-            return False
-
-        if n_words < self._filter_cfg.min_words_in_utterance:
+        if (n_words < self._filter_cfg.min_words_in_utterance or
+                n_words > self._filter_cfg.max_words_in_utterance):
             return False
 
         if not self._filter_cfg.allow_fragmented_sentences:
@@ -219,10 +221,8 @@ class LibriTTSRPreprocessor:
 
         dur = self._audio_processor.length_in_sec_of_file(utt_info.wav_path)
 
-        if dur < self._filter_cfg.min_utterance_duration:
-            return False
-
-        if dur > self._filter_cfg.max_utterance_duration:
+        if (dur < self._filter_cfg.min_utterance_duration or
+                dur > self._filter_cfg.max_utterance_duration):
             return False
 
         return True
@@ -336,7 +336,7 @@ class LibriTTSRPreprocessor:
 
         alignments = self._alignments_path_hand.get_alignment_for(utt_info)
         word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(
-            alignments)
+            alignments, trim_silences=True)
 
         if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
             _logger().debug('Alignment and text processor word counts do not match for utt %s, '
@@ -363,9 +363,10 @@ class LibriTTSRPreprocessor:
         wav = self._audio_processor.load_wav(utt_info.wav_path)
         spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
 
-        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(word_phoneme_int_mapping,
-                                                                  text_features.word_phoneme_mapping,
-                                                                  spec.shape[1])
+        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(
+            word_phoneme_int_mapping,
+            text_features.word_phoneme_mapping,
+            spec.shape[1])
 
         phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
             spec_phone_spans
@@ -468,14 +469,14 @@ class LibriTTSRPreprocessor:
                             speaker_id)
             return
 
-        embeddings: List[np.ndarray] = []
+        spk_embeddings: List[np.ndarray] = []
 
         for utterance_info in self._raw_path_handler.iter_utterances_for_spk(speaker_id):
             embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
                 utterance_info.wav_path)
-            embeddings.append(self._spk_embedder(embedder_input)[0])
+            spk_embeddings.append(self._spk_embedder(embedder_input)[0])
 
-        final_embedding = np.mean(embeddings, axis=0)
+        final_embedding = np.mean(spk_embeddings, axis=0)
 
         torch.save(torch.tensor(final_embedding),
                    embedding_path)
