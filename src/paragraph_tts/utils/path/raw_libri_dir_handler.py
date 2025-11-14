@@ -201,7 +201,7 @@ class RawLibriDirHandler:
         with open(books_file_path, 'r', encoding='utf-8') as f:
 
             proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
-                                 csv.reader(f, delimiter='\t'))
+                                 csv.reader(f, delimiter='\t', quotechar=None))
 
             for row in proper_rows:
                 if len(row) < 3:
