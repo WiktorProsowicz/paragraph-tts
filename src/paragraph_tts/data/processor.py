@@ -294,6 +294,10 @@ class LibriTTSRPreprocessor:
                 if not self._should_process_context(context.as_paragraph()):
                     continue
 
+                _logger().debug('Preparing embeddings for enriched context %s for utt %s',
+                                context.as_paragraph(),
+                                utt_info)
+
                 self._prepare_context_embeddings(
                     context.as_paragraph(),
                     os.path.join(context_embeddings_dir,
