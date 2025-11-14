@@ -63,7 +63,8 @@ class _DataSet(torch.utils.data.Dataset):
         input_token_emb = torch.load(sample.input_data.bert_embeddings_pth).to(torch.float)
         bert_to_word_pool_matrix = torch.load(sample.input_data.bert_to_word_pool_matrix_pth)
 
-        input_token_emb = torch.matmul(bert_to_word_pool_matrix.T, input_token_emb)
+        input_word_embeddings = torch.matmul(bert_to_word_pool_matrix.T,
+                                              input_token_emb)
 
         speaking_rate = torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float)
 
@@ -103,7 +104,7 @@ class _DataSet(torch.utils.data.Dataset):
             'context_tokens_length': context_tokens_length,
             'context_pse': context_token_pse,
             'context_pse_length': context_pse_length,
-            'input_token_emb': input_token_emb,
+            'input_word_emb': input_word_embeddings,
             'input_phoneme_ids': phoneme_ids,
             'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
@@ -149,7 +150,7 @@ class _DataSet(torch.utils.data.Dataset):
 
             batch[key] = torch.stack(padded_matrices, dim=0)
 
-        for key in ['context_token_emb', 'context_pse', 'input_token_emb', 'input_f0',
+        for key in ['context_token_emb', 'context_pse', 'input_word_emb', 'input_f0',
                     'input_energy', 'input_ling_stats', 'explicit_durations']:
 
             batch[key] = torch.nn.utils.rnn.pad_sequence(

@@ -83,7 +83,7 @@ class AcousticModel(pl.LightningModule):
             inputs['input_phoneme_ids'],
             inputs['input_pos_tags'],
             inputs['input_ling_stats'],
-            inputs['input_token_emb'],
+            inputs['input_word_emb'],
             inputs['word_to_phoneme_indices'],
             inputs['sentence_pos'],
             inputs['spk_rate'],
