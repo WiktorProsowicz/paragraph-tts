@@ -19,7 +19,7 @@ from paragraph_tts.utils.path.raw_libri_dir_handler import ParagraphInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import UtteranceInfo
 from paragraph_tts.utils.path.raw_libri_dir_handler import OriginalParagraph
 
-_FixedLengthArrayType: TypeAlias = List[float | int] | np.ndarray
+_FixedLengthArrayType: TypeAlias = List[float] | List[int ] | np.ndarray
 
 
 def is_paragraph_valid(para_info: ParagraphInfo) -> bool:

@@ -174,7 +174,7 @@ class ProcessedLibriDirHandler:
 
     def _obtain_contexts_for_utterance(self,
                                        contexts_path: str,
-                                       utt_id: int) -> UtteranceContextInfo:
+                                       utt_id: int) -> List[UtteranceContextInfo]:
 
         contexts: List[UtteranceContextInfo] = []
 

@@ -32,7 +32,8 @@ def main(script_cfg: omegaconf.DictConfig):
     _logger().info('Config:\n%s',
                    json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
-    raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(script_cfg.raw_ds_path)
+    raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(
+        script_cfg.raw_ds_path)
     alignments_path_hand = alignments_dir_handler.AlignmentsDirHandler(
         script_cfg.alignments_path)
 

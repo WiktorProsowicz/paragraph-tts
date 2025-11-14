@@ -59,7 +59,7 @@ def split_spectrogram_by_silences(spec: torch.Tensor,
         else:
             chunk_lens_l.append(l)
 
-    return torch.split(spec, chunk_lens_l, dim=1)
+    return list(torch.split(spec, chunk_lens_l, dim=1))
 
 
 def transform_mel_to_wav(mel: torch.Tensor,
