@@ -60,7 +60,7 @@ def _is_outlier(value: float | int, q1: float, q3: float) -> bool:
 class FeaturesExtractor:
     """Extracts various features from the dataset."""
 
-    def __init__(self, raw_ds_path: str):
+    def __init__(self, raw_ds_path: str, choose_splits: List[str]):
         """Inits the extractor.
 
         Args:
@@ -69,7 +69,8 @@ class FeaturesExtractor:
 
         self._raw_ds_path = raw_ds_path
         self._raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(
-            raw_ds_path
+            raw_ds_path,
+            choose_splits=choose_splits
         )
         self._audio_processor = audio_prep.AudioProcessor(
             sr=22050,

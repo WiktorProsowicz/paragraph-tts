@@ -28,7 +28,8 @@ def main(script_cfg: omegaconf.DictConfig):
                    json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
     raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(
-        script_cfg.raw_ds_path)
+        script_cfg.raw_ds_path,
+        choose_splits=script_cfg.filters.choose_splits)
     alignments_path_hand = alignments_dir_handler.AlignmentsDirHandler(
         script_cfg.alignments_path)
 
@@ -69,13 +70,7 @@ def main(script_cfg: omegaconf.DictConfig):
         }
     )
 
-    def filtered_speakers():
-        for spk_id in raw_ds_path_hand.iter_speakers():
-            split = raw_ds_path_hand.get_split_for_speaker(spk_id)
-            if split in script_cfg.filters.choose_splits:
-                yield spk_id
-
-    speakers = list(filtered_speakers())
+    speakers = list(raw_ds_path_hand.iter_speakers())
 
     _logger().info('Processing %d speakers', len(speakers))
 
