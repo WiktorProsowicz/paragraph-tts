@@ -8,7 +8,7 @@ import hydra
 import omegaconf
 import tqdm
 
-from paragraph_tts import data
+from paragraph_tts.data.preprocessing import processor
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import alignments_dir_handler
 from paragraph_tts.utils.path import enriched_context_dir_handler
@@ -42,7 +42,7 @@ def main(script_cfg: omegaconf.DictConfig):
 
     os.makedirs(script_cfg.processed_ds_output_path, exist_ok=True)
 
-    sample_filter_cfg = data.processor.SampleFilterCfg(
+    sample_filter_cfg = processor.SampleFilterCfg(
         max_words_in_utterance=script_cfg.filters.max_words_in_utterance,
         min_words_in_utterance=script_cfg.filters.min_words_in_utterance,
         allow_fragmented_sentences=script_cfg.filters.allow_fragmented_sentences,
@@ -54,7 +54,7 @@ def main(script_cfg: omegaconf.DictConfig):
         max_words_in_context=script_cfg.filters.max_words_in_context
     )
 
-    preprocessor = data.processor.LibriTTSRPreprocessor(raw_ds_path_hand,
+    preprocessor = processor.LibriTTSRPreprocessor(raw_ds_path_hand,
                                                         enriched_contexts_path_hand,
                                                         alignments_path_hand,
                                                         script_cfg.processed_ds_output_path,
