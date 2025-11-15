@@ -8,7 +8,7 @@ import hydra
 import omegaconf
 import tqdm
 
-from paragraph_tts.data.preprocessing import processor
+from paragraph_tts.data.preprocessing import (processor, utils as prep_utils)
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import alignments_dir_handler
 from paragraph_tts.utils.path import enriched_context_dir_handler
@@ -62,20 +62,23 @@ def main(script_cfg: omegaconf.DictConfig):
                                                         script_cfg.embedders_device,
                                                         sample_filter_cfg)
 
-    preprocessor.save_metadata(
-        {
-            'prepare_speaker_embeddings': script_cfg.prepare_speaker_embeddings,
-            'embedders_device': script_cfg.embedders_device,
-            'filters': omegaconf.OmegaConf.to_container(script_cfg.filters)
-        }
-    )
-
     speakers = list(raw_ds_path_hand.iter_speakers())
 
     _logger().info('Processing %d speakers', len(speakers))
 
     for speaker_id in tqdm.tqdm(speakers, desc='Speakers', unit='spk'):
         preprocessor.run_for_speaker(speaker_id)
+
+    preprocessor.save_metadata(
+        {
+            'prepare_speaker_embeddings': script_cfg.prepare_speaker_embeddings,
+            'embedders_device': script_cfg.embedders_device,
+            'filters': omegaconf.OmegaConf.to_container(script_cfg.filters),
+            'ds_stats': prep_utils.compose_processed_ds_stats(
+                script_cfg.processed_ds_output_path
+            )
+        }
+    )
 
 
 if __name__ == '__main__':
