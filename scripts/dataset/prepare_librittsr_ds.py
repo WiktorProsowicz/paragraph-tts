@@ -8,7 +8,7 @@ import hydra
 import omegaconf
 import tqdm
 
-from paragraph_tts import data
+from paragraph_tts.data.preprocessing import (processor, utils as prep_utils)
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import alignments_dir_handler
 from paragraph_tts.utils.path import enriched_context_dir_handler
@@ -28,7 +28,8 @@ def main(script_cfg: omegaconf.DictConfig):
                    json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
     raw_ds_path_hand = raw_libri_dir_handler.RawLibriDirHandler(
-        script_cfg.raw_ds_path)
+        script_cfg.raw_ds_path,
+        choose_splits=script_cfg.filters.choose_splits)
     alignments_path_hand = alignments_dir_handler.AlignmentsDirHandler(
         script_cfg.alignments_path)
 
@@ -41,7 +42,7 @@ def main(script_cfg: omegaconf.DictConfig):
 
     os.makedirs(script_cfg.processed_ds_output_path, exist_ok=True)
 
-    sample_filter_cfg = data.processor.SampleFilterCfg(
+    sample_filter_cfg = processor.SampleFilterCfg(
         max_words_in_utterance=script_cfg.filters.max_words_in_utterance,
         min_words_in_utterance=script_cfg.filters.min_words_in_utterance,
         allow_fragmented_sentences=script_cfg.filters.allow_fragmented_sentences,
@@ -53,7 +54,7 @@ def main(script_cfg: omegaconf.DictConfig):
         max_words_in_context=script_cfg.filters.max_words_in_context
     )
 
-    preprocessor = data.processor.LibriTTSRPreprocessor(raw_ds_path_hand,
+    preprocessor = processor.LibriTTSRPreprocessor(raw_ds_path_hand,
                                                         enriched_contexts_path_hand,
                                                         alignments_path_hand,
                                                         script_cfg.processed_ds_output_path,
@@ -61,26 +62,23 @@ def main(script_cfg: omegaconf.DictConfig):
                                                         script_cfg.embedders_device,
                                                         sample_filter_cfg)
 
-    preprocessor.save_metadata(
-        {
-            'prepare_speaker_embeddings': script_cfg.prepare_speaker_embeddings,
-            'embedders_device': script_cfg.embedders_device,
-            'filters': omegaconf.OmegaConf.to_container(script_cfg.filters)
-        }
-    )
-
-    def filtered_speakers():
-        for spk_id in raw_ds_path_hand.iter_speakers():
-            split = raw_ds_path_hand.get_split_for_speaker(spk_id)
-            if split in script_cfg.filters.choose_splits:
-                yield spk_id
-
-    speakers = list(filtered_speakers())
+    speakers = list(raw_ds_path_hand.iter_speakers())
 
     _logger().info('Processing %d speakers', len(speakers))
 
     for speaker_id in tqdm.tqdm(speakers, desc='Speakers', unit='spk'):
         preprocessor.run_for_speaker(speaker_id)
+
+    preprocessor.save_metadata(
+        {
+            'prepare_speaker_embeddings': script_cfg.prepare_speaker_embeddings,
+            'embedders_device': script_cfg.embedders_device,
+            'filters': omegaconf.OmegaConf.to_container(script_cfg.filters),
+            'ds_stats': prep_utils.compose_processed_ds_stats(
+                script_cfg.processed_ds_output_path
+            )
+        }
+    )
 
 
 if __name__ == '__main__':

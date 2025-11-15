@@ -142,7 +142,8 @@ def main(script_cfg: omegaconf.DictConfig):
         sys.exit(1)
 
     raw_path_handler = raw_libri_dir_handler.RawLibriDirHandler(
-        script_cfg.raw_ds_path)
+        script_cfg.raw_ds_path,
+        choose_splits=script_cfg.filters.choose_splits)
 
     ds_metadata = librittsr_helpers.LibriTTSRMetadata()
 
@@ -151,10 +152,6 @@ def main(script_cfg: omegaconf.DictConfig):
 
     def iter_filtered_utterances():
         for para_info in raw_path_handler.iter_all_paragraphs():
-            split = raw_path_handler.get_split_for_speaker(para_info.spk_id)
-
-            if split not in script_cfg.filters.choose_splits:
-                continue
 
             original_paragraph = raw_path_handler.get_original_paragraph(
                 para_info)

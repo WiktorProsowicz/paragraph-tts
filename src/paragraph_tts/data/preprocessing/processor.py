@@ -151,7 +151,7 @@ class LibriTTSRPreprocessor:
                 not self._should_process_context(list(original_paragraph.sentences.values()))):
 
             if self._enriched_contexts_path_hand is None:
-                _logger().debug('Skipping paragraph with missing original context: %s',
+                _logger().debug('Skipping paragraph with missing/invalid original context: %s',
                                 str(para_info))
                 return
 
@@ -185,6 +185,7 @@ class LibriTTSRPreprocessor:
 
             paragraph_metadata = {
                 'length': len(original_paragraph.sentences),
+                'sentences': original_paragraph.sentences
             }
 
             with open(os.path.join(context_embeddings_dir, 'original', 'metadata.json'),
@@ -276,45 +277,38 @@ class LibriTTSRPreprocessor:
             return
 
         inputs_path = os.path.join(dst_dir, 'input_data', str(utt_info.utt_id))
-        if os.path.exists(inputs_path):
-            _logger().debug('Input data for utterance %s already exists, skipping.',
-                            utt_info)
+
+        if not self._prepare_input_for_utterance(utt_info, inputs_path):
             return
 
-        inputs = self._obtain_input_for_utterance(utt_info)
+        if self._enriched_contexts_path_hand:
 
-        if not inputs:
-            return
+            if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
+                return
 
-        os.makedirs(inputs_path)
+            contexts = self._enriched_contexts_path_hand.get_contexts_for(
+                utt_info)
 
-        for file_name, tensor in inputs.items():
-            torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
+            for context_idx, context in enumerate(contexts):
 
-            if self._enriched_contexts_path_hand:
-
-                if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
+                if not self._should_process_context(context.as_paragraph()):
                     continue
 
-                contexts = self._enriched_contexts_path_hand.get_contexts_for(
-                    utt_info)
+                _logger().debug('Preparing embeddings for enriched context %s for utt %s',
+                                context.as_paragraph(),
+                                utt_info)
 
-                for context_idx, context in enumerate(contexts):
+                self._prepare_context_embeddings(
+                    context.as_paragraph(),
+                    os.path.join(context_embeddings_dir,
+                                 f'enriched_{utt_info.utt_id}_{context_idx}')
+                )
 
-                    if not self._should_process_context(context.as_paragraph()):
-                        continue
-
-                    self._prepare_context_embeddings(
-                        context.as_paragraph(),
-                        os.path.join(context_embeddings_dir,
-                                     f'enriched_{utt_info.utt_id}_{context_idx}')
-                    )
-
-                    self._save_enriched_context_metadata(
-                        context,
-                        os.path.join(context_embeddings_dir,
-                                     f'enriched_{utt_info.utt_id}_{context_idx}')
-                    )
+                self._save_enriched_context_metadata(
+                    context,
+                    os.path.join(context_embeddings_dir,
+                                 f'enriched_{utt_info.utt_id}_{context_idx}')
+                )
 
     def _save_enriched_context_metadata(self,
                                         context: ContextForUtterance,
@@ -322,14 +316,20 @@ class LibriTTSRPreprocessor:
         metadata = {
             'n_preceding_sentences': len(context.preceding_sentences),
             'n_following_sentences': len(context.following_sentences),
+            'sentences': context.as_paragraph()
         }
 
         with open(os.path.join(output_dir, 'metadata.json'), 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=4)
 
-    def _obtain_input_for_utterance(self,
-                                    utt_info: raw_libri_dir_handler.UtteranceInfo
-                                    ) -> Optional[Dict[str, torch.Tensor]]:
+    def _prepare_input_for_utterance(self,
+                                     utt_info: raw_libri_dir_handler.UtteranceInfo,
+                                     inputs_path: str) -> bool:
+
+        if os.path.exists(inputs_path):
+            _logger().debug('Input data for utterance %s already exists, skipping.',
+                            utt_info)
+            return False
 
         text = self._text_processor.load_text(utt_info.text_path)
         text_features = self._text_processor.tokenize_text(text)
@@ -341,7 +341,7 @@ class LibriTTSRPreprocessor:
         if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
             _logger().debug('Alignment and text processor word counts do not match for utt %s, '
                             'skipping', utt_info)
-            return None
+            return False
 
         pauses = alignment_prep.get_pauses(word_phoneme_int_mapping)
         text_prep.add_pauses(text_features, pauses)
@@ -376,7 +376,9 @@ class LibriTTSRPreprocessor:
                                                   spec.shape[1])
         )
 
-        return {
+        os.makedirs(inputs_path)
+
+        for file_name, tensor in {
             'phoneme_ids': torch.tensor(phoneme_ids, dtype=torch.long),
             'bert_embeddings': bert_embeddings.clone().to(torch.float16),
             'bert_to_word_pool_matrix': torch.tensor(bert_to_word_pool_matrix, dtype=torch.float),
@@ -389,7 +391,20 @@ class LibriTTSRPreprocessor:
             'phone_to_spec_indices': torch.tensor(phone_to_spec_indices, dtype=torch.long),
             'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float),
             'explicit_durations': torch.tensor(spec_phone_spans, dtype=torch.long)
-        }
+        }.items():
+            torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
+
+        metadata_path = os.path.join(inputs_path, 'metadata.json')
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'duration_sec': self._audio_processor.length_in_sec_of_file(utt_info.wav_path),
+                'original_text': text,
+                'bert_tokens': text_features.get_bert_token_sequence(),
+                'phonemes': text_features.get_phoneme_sequence(),
+                'words': text_features.words
+            }, f, indent=4, ensure_ascii=False)
+
+        return True
 
     def _save_normalization_stats_for_speaker(self, spk_id: int):
 

@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Iterator
 from typing import List
+from typing import Dict
+from typing import Any
 
 
 def _logger():
@@ -56,6 +58,8 @@ class UtteranceContextInfo:
     token_embeddings_path: str
     pse_path: str
 
+    metadata: Dict[str, Any]
+
 
 @dataclasses.dataclass
 class UtteranceDataInfo:
@@ -97,6 +101,8 @@ class SampleInfo:
     contexts: List[UtteranceContextInfo]
     input_data: UtteranceDataInfo
     spk_embedding_path: str
+
+    metadata: Dict[str, Any]
 
 
 class ProcessedLibriDirHandler:
@@ -148,6 +154,10 @@ class ProcessedLibriDirHandler:
                                                    'input_data',
                                                    utt_id)
 
+                    with open(os.path.join(input_data_path, 'metadata.json'), 'r',
+                              encoding='utf-8') as f:
+                        metadata = json.load(f)
+
                     yield SampleInfo(
                         spk_id=int(spk_id),
                         chap_id=int(chap_id),
@@ -155,7 +165,8 @@ class ProcessedLibriDirHandler:
                         utt_id=int(utt_id),
                         contexts=contexts,
                         input_data=self._obtain_utterance_data_info(input_data_path),
-                        spk_embedding_path=os.path.join(self._spk_embeddings_path, f'{spk_id}.pt')
+                        spk_embedding_path=os.path.join(self._spk_embeddings_path, f'{spk_id}.pt'),
+                        metadata=metadata
                     )
 
     def get_numerical_stats(self, spk_id: int) -> SpeakerNumericalStats:
@@ -193,7 +204,8 @@ class ProcessedLibriDirHandler:
                 is_original=True,
                 utterance_pos=get_sentence_pos_type(utt_id, metadata['length'] - utt_id - 1),
                 token_embeddings_path=os.path.join(context_path, 'single_embeddings.pt'),
-                pse_path=os.path.join(context_path, 'paired_embeddings.pt')
+                pse_path=os.path.join(context_path, 'paired_embeddings.pt'),
+                metadata=metadata
             ))
 
         for context_signature in context_signatures:
@@ -212,7 +224,8 @@ class ProcessedLibriDirHandler:
                         metadata['n_following_sentences']
                     ),
                     token_embeddings_path=os.path.join(context_path, 'single_embeddings.pt'),
-                    pse_path=os.path.join(context_path, 'paired_embeddings.pt')
+                    pse_path=os.path.join(context_path, 'paired_embeddings.pt'),
+                    metadata=metadata
                 ))
 
         for context in contexts:

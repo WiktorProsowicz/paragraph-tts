@@ -141,7 +141,8 @@ def main(script_cfg: omegaconf.DictConfig):
 
     utils.logging_utils.setup_logging('perform_eda')
 
-    _logger().info('Script configuration:\n%s', json.dumps(dict(script_cfg), indent=4))
+    _logger().info('Script configuration:\n%s',
+                   json.dumps(omegaconf.OmegaConf.to_container(script_cfg), indent=4))
 
     if not os.path.exists(script_cfg.raw_ds_path):
         _logger().critical('Cannot load raw dataset from a non-existing path: %s',
@@ -151,7 +152,8 @@ def main(script_cfg: omegaconf.DictConfig):
 
     overall_stats = {}
 
-    feature_extractor = data.eda.FeaturesExtractor(script_cfg.raw_ds_path)
+    feature_extractor = data.eda.FeaturesExtractor(script_cfg.raw_ds_path,
+                                                   choose_splits=script_cfg.choose_splits)
 
     _logger().info('Collecting speakers stats...')
     overall_stats['speakers_stats'] = feature_extractor.get_speakers_stats()

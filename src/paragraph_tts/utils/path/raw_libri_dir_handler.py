@@ -58,13 +58,16 @@ class OriginalParagraph:
 class RawLibriDirHandler:
     """Manages access to contents of raw LibriTTS-R dataset."""
 
-    def __init__(self, raw_ds_path: str):
+    def __init__(self,
+                 raw_ds_path: str,
+                 choose_splits: Optional[List[str]] = None):
         """
         Args:
             raw_ds_path: Root path to the LibriTTS-R raw ds.
         """
 
         self._raw_ds_path = raw_ds_path
+        self._choose_splits = choose_splits
 
         self._spk_to_split = {}
 
@@ -91,6 +94,10 @@ class RawLibriDirHandler:
         """Iterates over speaker IDs."""
 
         for ds_split in os.listdir(self._raw_ds_path):
+
+            if (self._choose_splits is not None and ds_split not in self._choose_splits):
+                continue
+
             split_path = os.path.join(self._raw_ds_path, ds_split)
 
             for spk_id in os.listdir(split_path):
@@ -201,7 +208,7 @@ class RawLibriDirHandler:
         with open(books_file_path, 'r', encoding='utf-8') as f:
 
             proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
-                                 csv.reader(f, delimiter='\t'))
+                                 csv.reader(f, delimiter='\t', quotechar=None))
 
             for row in proper_rows:
                 if len(row) < 3:
