@@ -19,16 +19,34 @@ dependencies = [
     "lightning>=2.6.1",
     "speechbrain>=1.0.3",
     "pytorch-fast-transformers>=0.4.0",
-    "mlflow>=3.4.0"
+    "mlflow>=3.10.1"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "mypy>=1.18.1",
-    "pre-commit>=4.3.0",
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
     "ipykernel>=6.30.1",
-    "pylint>=3.1.0"
+    "pylint>=4.0.5",
+    "autopep8>=2.3.2"
 ]
+
+[tool.pylint."messages control"]
+disable = [
+    "fixme",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-locals",
+    "R0801"
+]
+
+[tool.autopep8]
+aggressive = true
+max-line-length = 100
+in-place = true
 
 [tool.mypy]
 disable_error_code = "import-untyped"
+strict = true
