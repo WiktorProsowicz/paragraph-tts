@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains definition of context encoder producing context embeddings for acoustic model."""
 import torch
 
@@ -184,4 +183,4 @@ class ContextEncoder(torch.nn.Module):
             phoneme_lengths=phoneme_lengths
         )
 
-        return token_context + pse_context
+        return token_context + pse_context  # type: ignore[no-any-return]

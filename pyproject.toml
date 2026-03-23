@@ -41,6 +41,7 @@ disable = [
     "too-many-locals",
     "R0801"
 ]
+ignore = "**/extern/*|cbhg.py"
 
 [tool.autopep8]
 aggressive = true
@@ -50,3 +51,4 @@ in-place = true
 [tool.mypy]
 disable_error_code = "import-untyped"
 strict = true
+exclude = "extern/.*|cbhg.py"

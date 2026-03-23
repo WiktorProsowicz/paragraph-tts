@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities used by trainable models."""
 import logging
 import sys

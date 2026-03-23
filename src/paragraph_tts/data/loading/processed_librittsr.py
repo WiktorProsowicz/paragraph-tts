@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains processed LibriTTS-R dataset loader."""
 import logging
 import random
@@ -64,7 +63,7 @@ class _DataSet(torch.utils.data.Dataset):
         bert_to_word_pool_matrix = torch.load(sample.input_data.bert_to_word_pool_matrix_pth)
 
         input_word_embeddings = torch.matmul(bert_to_word_pool_matrix.T,
-                                              input_token_emb)
+                                             input_token_emb)
 
         speaking_rate = torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float)
 

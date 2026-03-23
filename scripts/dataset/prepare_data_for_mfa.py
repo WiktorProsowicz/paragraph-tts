@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Prepares audio/transcript pairs for MFA alignment."""
 import json
 import logging

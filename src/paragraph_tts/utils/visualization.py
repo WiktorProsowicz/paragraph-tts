@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for visualization during training/inference."""
 import matplotlib.pyplot as plt
 import torch

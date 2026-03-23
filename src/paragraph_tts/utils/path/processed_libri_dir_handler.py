@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utils for handling paths in processed LibriTTS-R dataset."""
 import dataclasses
 import enum
@@ -6,10 +5,10 @@ import json
 import logging
 import os
 import sys
+from typing import Any
+from typing import Dict
 from typing import Iterator
 from typing import List
-from typing import Dict
-from typing import Any
 
 
 def _logger():
@@ -124,7 +123,7 @@ class ProcessedLibriDirHandler:
     def get_metadata(self):
         """Returns processed dataset's metadata."""
 
-        with open(self._metadata_path, 'r', encoding='utf-8') as f:
+        with open(self._metadata_path, encoding='utf-8') as f:
             return json.load(f)
 
     def iter_samples(self) -> Iterator[SampleInfo]:
@@ -154,7 +153,7 @@ class ProcessedLibriDirHandler:
                                                    'input_data',
                                                    utt_id)
 
-                    with open(os.path.join(input_data_path, 'metadata.json'), 'r',
+                    with open(os.path.join(input_data_path, 'metadata.json'),
                               encoding='utf-8') as f:
                         metadata = json.load(f)
 
@@ -197,7 +196,7 @@ class ProcessedLibriDirHandler:
 
             context_path = os.path.join(contexts_path, 'original')
 
-            with open(os.path.join(context_path, 'metadata.json'), 'r', encoding='utf-8') as f:
+            with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
                 metadata = json.load(f)
 
             contexts.append(UtteranceContextInfo(
@@ -214,7 +213,7 @@ class ProcessedLibriDirHandler:
 
                 context_path = os.path.join(contexts_path, context_signature)
 
-                with open(os.path.join(context_path, 'metadata.json'), 'r', encoding='utf-8') as f:
+                with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
                     metadata = json.load(f)
 
                 contexts.append(UtteranceContextInfo(

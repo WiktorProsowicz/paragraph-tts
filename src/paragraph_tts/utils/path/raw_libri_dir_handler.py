@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in raw LibriTTS-R dataset."""
 import csv
 import dataclasses
@@ -205,7 +204,7 @@ class RawLibriDirHandler:
 
         context_sentences: Dict[int, str] = {}
 
-        with open(books_file_path, 'r', encoding='utf-8') as f:
+        with open(books_file_path, encoding='utf-8') as f:
 
             proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
                                  csv.reader(f, delimiter='\t', quotechar=None))

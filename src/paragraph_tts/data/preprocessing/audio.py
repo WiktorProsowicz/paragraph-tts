@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains audio processing utilities."""
 from typing import Tuple
 

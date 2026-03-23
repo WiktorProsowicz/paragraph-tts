@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains definition of acoustic model training/inference pipelines."""
 import logging
 from typing import Any

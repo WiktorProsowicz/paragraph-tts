@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runs Exploratory Data Analysis on raw LibriTTS-R dataset."""
 import datetime
 import json

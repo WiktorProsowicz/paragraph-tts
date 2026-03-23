@@ -1,7 +1,7 @@
 """Contains utilities for data preprocessing."""
-
-from typing import Dict, Any
 from collections import defaultdict
+from typing import Any
+from typing import Dict
 
 from paragraph_tts.utils.path import processed_libri_dir_handler
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Generates enriched context for dataset samples using a language model."""
 import itertools
 import json

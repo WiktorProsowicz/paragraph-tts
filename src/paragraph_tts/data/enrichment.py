@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for context enrichment."""
 import dataclasses
 import json

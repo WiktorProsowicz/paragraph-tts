@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for accessing and transforming LibriTTS-R dataset."""
 import csv
 import dataclasses
@@ -43,14 +42,14 @@ class LibriTTSRMetadata:
 
         books: Dict[str, BookInfo] = {}
 
-        with open(_BOOKS_PATH, 'r', encoding='utf-8') as books_f:
+        with open(_BOOKS_PATH, encoding='utf-8') as books_f:
             for line in csv.reader(books_f, delimiter='|'):
                 line = [it.strip() for it in line]
                 books[line[0]] = BookInfo(id=line[0], title=line[1])
 
         self._speakers: Dict[str, SpeakerInfo] = {}
 
-        with open(_SPEAKERS_PATH, 'r', encoding='utf-8') as speakers_f:
+        with open(_SPEAKERS_PATH, encoding='utf-8') as speakers_f:
             for line in itertools.dropwhile(lambda x: not x[0].isnumeric(),
                                             csv.reader(speakers_f, delimiter='\t')):
                 line = [it.strip() for it in line]
@@ -61,7 +60,7 @@ class LibriTTSRMetadata:
         # Maps books to speaker, chapter pairs, as in the original mapping file.
         self._reader_book_mapping: Dict[Tuple[str, str], BookInfo] = {}
 
-        with open(_READER_BOOK_MAPPING_PATH, 'r', encoding='utf-8') as mapping_f:
+        with open(_READER_BOOK_MAPPING_PATH, encoding='utf-8') as mapping_f:
             for line in itertools.dropwhile(lambda x: not x[0].isnumeric(),
                                             csv.reader(mapping_f, delimiter='\t')):
                 line = [it.strip() for it in line]

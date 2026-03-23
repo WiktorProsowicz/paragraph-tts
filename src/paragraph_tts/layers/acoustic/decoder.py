@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains definition of acoustic model's decoder module."""
 import torch
 from comp_trans_tts.model.transformers import conformer

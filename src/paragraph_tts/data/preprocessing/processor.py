@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains classes for processing/reading LibriTTS-R dataset."""
 import dataclasses
 import json

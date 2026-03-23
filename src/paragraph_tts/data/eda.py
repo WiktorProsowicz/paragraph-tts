@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for performing Exploratory Data Analysis of LibriTTS-R DS."""
 import itertools
 import random

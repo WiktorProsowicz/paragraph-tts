@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities used in neural networks."""
 import torch
 

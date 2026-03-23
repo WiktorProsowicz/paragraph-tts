@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Downloads prepared alignments for LibriTTS-R dataset."""
 import json
 import logging

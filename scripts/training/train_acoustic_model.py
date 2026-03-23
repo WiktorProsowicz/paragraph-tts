@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runs training pipeline for acoustic model.
 
 The script supports logging MLFlow experiment parameters and saves checkpoints.

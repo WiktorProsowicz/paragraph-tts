@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains implementation of PermuteFormer Multi-Head Attention module."""
 import torch
 from fast_transformers.attention import linear_attention
