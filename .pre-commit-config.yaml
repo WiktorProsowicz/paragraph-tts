@@ -3,11 +3,11 @@
 # This file contains pre-commit hooks containing rules under which the project files
 # should be checked.
 # ----------------------------------------------------------------------------------
-
+exclude: src/paragraph_tts/layers/shared/cbhg.py
 repos:
   # A set of pre-commit hooks checking various file's features.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -16,21 +16,22 @@ repos:
       - id: check-yaml
       - id: debug-statements
       - id: double-quote-string-fixer
-      - id: fix-encoding-pragma
       - id: check-executables-have-shebangs
 
   # Checks whether the python code's syntax conforms to the conventions of newer python versions.
   - repo: https://github.com/asottile/pyupgrade
-    rev: v2.31.0
+    rev: v3.21.2
     hooks:
       - id: pyupgrade
 
   # Makes sure the python code's format conforms to the PEP8 style guide.
-  - repo: https://github.com/hhatto/autopep8
-    rev: v2.1.0
+  - repo: local
     hooks:
       - id: autopep8
-        args: [--in-place, --aggressive, --max-line-length=100]
+        name: autopep8
+        entry: autopep8
+        language: system
+        types: [python]
 
   # Makes sure the python variables are used according to their types.
   - repo: local
@@ -40,7 +41,7 @@ repos:
         entry: mypy
         language: system
         types: [python]
-        args: [--python-executable, .venv/bin/python, --config-file, pyproject.toml]
+        args: [--python-executable, .venv/bin/python]
 
   # Checks whether the code is accepted by the pylint checker.
   - repo: local
@@ -51,14 +52,7 @@ repos:
         language: system
         types: [python]
         args:
-          - --ignore-paths=.*/cbhg.py
-          - --disable=fixme
-          - --disable=too-few-public-methods
-          - --disable=too-many-instance-attributes
-          - --disable=too-many-arguments
-          - --disable=too-many-positional-arguments
-          - --disable=too-many-locals
-          - --disable=R0801
+          - --rcfile=pyproject.toml
 
   # Checks whether the python import statements are properly sorted.
   - repo: https://github.com/asottile/reorder-python-imports

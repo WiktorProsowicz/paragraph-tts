@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in alignments directory for LibriTTS-R dataset."""
 import os
 from typing import Dict

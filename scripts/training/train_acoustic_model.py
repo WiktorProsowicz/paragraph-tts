@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runs training pipeline for acoustic model.
 
 The script supports logging MLFlow experiment parameters and saves checkpoints.
@@ -20,12 +19,12 @@ from paragraph_tts.models import acoustic as acoustic_model
 from paragraph_tts.utils import logging_utils
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='train_acoustic_model')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Runs training pipeline for acoustic model."""
 
     # Set seed for reproducibility

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runs preprocessing on raw LibriTTS-R dataset and saves the preprocessed files."""
 import json
 import logging
@@ -8,19 +7,20 @@ import hydra
 import omegaconf
 import tqdm
 
-from paragraph_tts.data.preprocessing import (processor, utils as prep_utils)
+from paragraph_tts.data.preprocessing import processor
+from paragraph_tts.data.preprocessing import utils as prep_utils
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import alignments_dir_handler
 from paragraph_tts.utils.path import enriched_context_dir_handler
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='prepare_librittsr_ds')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Runs LibriTTS-R preprocessing."""
 
     logging_utils.setup_logging('prepare_librittsr_ds')
@@ -55,12 +55,12 @@ def main(script_cfg: omegaconf.DictConfig):
     )
 
     preprocessor = processor.LibriTTSRPreprocessor(raw_ds_path_hand,
-                                                        enriched_contexts_path_hand,
-                                                        alignments_path_hand,
-                                                        script_cfg.processed_ds_output_path,
-                                                        script_cfg.prepare_speaker_embeddings,
-                                                        script_cfg.embedders_device,
-                                                        sample_filter_cfg)
+                                                   enriched_contexts_path_hand,
+                                                   alignments_path_hand,
+                                                   script_cfg.processed_ds_output_path,
+                                                   script_cfg.prepare_speaker_embeddings,
+                                                   script_cfg.embedders_device,
+                                                   sample_filter_cfg)
 
     speakers = list(raw_ds_path_hand.iter_speakers())
 

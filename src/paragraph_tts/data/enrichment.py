@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for context enrichment."""
 import dataclasses
 import json
@@ -13,7 +12,7 @@ import ollama
 from paragraph_tts.data import librittsr_helpers
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 

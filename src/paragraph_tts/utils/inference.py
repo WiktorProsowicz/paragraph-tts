@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for inference with trained models."""
 from typing import Callable
 from typing import List

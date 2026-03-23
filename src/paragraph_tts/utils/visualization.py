@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for visualization during training/inference."""
 import matplotlib.pyplot as plt
 import torch
+from matplotlib.figure import Figure
 
 
 def plot_spectrograms(pred_spec: torch.Tensor,
-                      target_spec: torch.Tensor):
+                      target_spec: torch.Tensor) -> Figure:
     """Plots predicted and target mel-spectrograms side by side."""
 
     fig, axs = plt.subplots(2, 1, figsize=(10, 4))
@@ -33,7 +33,7 @@ def plot_spectrograms(pred_spec: torch.Tensor,
     return fig
 
 
-def plot_spec_text_alignment(alignment: torch.Tensor):
+def plot_spec_text_alignment(alignment: torch.Tensor) -> Figure:
     """Plots alignment matrix between text and spectrogram frames."""
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -50,7 +50,7 @@ def plot_spec_text_alignment(alignment: torch.Tensor):
 
 def plot_contours(pred_contour: torch.Tensor,
                   target_contour: torch.Tensor,
-                  contour_name: str):
+                  contour_name: str) -> Figure:
     """Plots predicted and target contours (pitch/energy/duration) over time."""
 
     fig, ax = plt.subplots(figsize=(10, 4))

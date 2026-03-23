@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in generated enriched context for LibriTTS-R dataset."""
 import dataclasses
 import json
@@ -12,7 +11,7 @@ from torch_dev_utils.tts import text_prep
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -44,7 +43,7 @@ class EnrichedContextDirHandler:
         self._contexts_path = contexts_path
 
         metadata_path = os.path.join(contexts_path, 'metadata.json')
-        with open(metadata_path, 'r', encoding='utf-8') as f:
+        with open(metadata_path, encoding='utf-8') as f:
             self._metadata = json.load(f)
 
     def contains_contexts_for(self,
@@ -69,7 +68,7 @@ class EnrichedContextDirHandler:
             _logger().critical('No contexts found for utterance: %s', utterance)
             sys.exit(1)
 
-        with open(utterance_contexts_path, 'r', encoding='utf-8') as f:
+        with open(utterance_contexts_path, encoding='utf-8') as f:
             contexts_json = json.load(f)
 
         return [

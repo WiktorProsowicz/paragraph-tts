@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains definition of acoustic model training/inference pipelines."""
 import logging
 from typing import Any
@@ -17,7 +16,7 @@ from paragraph_tts.utils import neural as neural_utils
 from paragraph_tts.utils import visualization as viz_utils
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -31,7 +30,7 @@ class AcousticModel(pl.LightningModule):
                  model_cfg: Dict[str, Any],
                  optim_cfg: Dict[str, Any],
                  train_cfg: Dict[str, Any],
-                 data_cfg: Dict[str, Any]):
+                 data_cfg: Dict[str, Any]) -> None:
 
         super().__init__()
 
@@ -58,7 +57,7 @@ class AcousticModel(pl.LightningModule):
 
         self.save_hyperparameters()
 
-    def configure_optimizers(self):
+    def configure_optimizers(self):  # type: ignore
         """Sets up optimizer from config."""
 
         opt = model_utils.optimizer_from_cfg(self._optim_cfg,

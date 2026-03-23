@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
 """Prepares audio/transcript pairs for MFA alignment."""
 import json
 import logging
 import os
+from typing import Iterator
 
 import hydra
 import omegaconf
@@ -13,12 +13,12 @@ from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='prepare_data_for_mfa')
-def main(cfg: omegaconf.DictConfig):
+def main(cfg: omegaconf.DictConfig) -> None:
     """Prepares audio/transcript pairs for MFA alignment."""
 
     logging_utils.setup_logging('prepare_data_for_mfa')
@@ -30,7 +30,7 @@ def main(cfg: omegaconf.DictConfig):
     raw_ds_handler = raw_libri_dir_handler.RawLibriDirHandler(
         cfg.raw_dataset_path)
 
-    def iter_all_utterances():
+    def iter_all_utterances() -> Iterator[raw_libri_dir_handler.UtteranceInfo]:
 
         for para_info in raw_ds_handler.iter_all_paragraphs():
             yield from para_info.utterances

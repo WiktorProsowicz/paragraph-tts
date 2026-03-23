@@ -1,7 +1,8 @@
 """Contains utilities for data preprocessing."""
-
-from typing import Dict, Any
 from collections import defaultdict
+from typing import Any
+from typing import DefaultDict
+from typing import Dict
 
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
@@ -15,7 +16,7 @@ def compose_processed_ds_stats(processed_ds_path: str) -> Dict[str, Any]:
 
     dir_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(processed_ds_path)
 
-    context_sentences_count = defaultdict(int)
+    context_sentences_count: DefaultDict[int, int] = defaultdict(int)
 
     for sample in dir_handler.iter_samples():
         for context in sample.contexts:

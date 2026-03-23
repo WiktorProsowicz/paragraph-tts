@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utilities for handling paths in raw LibriTTS-R dataset."""
 import csv
 import dataclasses
@@ -12,7 +11,7 @@ from typing import Optional
 from typing import Set
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -38,7 +37,7 @@ class ParagraphInfo:
     is_complete: bool
     utterances: list[UtteranceInfo]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'Paragraph(spk_id={self.spk_id}, chap_id={self.chap_id}, para_id={self.para_id})'
 
 
@@ -205,7 +204,7 @@ class RawLibriDirHandler:
 
         context_sentences: Dict[int, str] = {}
 
-        with open(books_file_path, 'r', encoding='utf-8') as f:
+        with open(books_file_path, encoding='utf-8') as f:
 
             proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
                                  csv.reader(f, delimiter='\t', quotechar=None))
@@ -259,7 +258,7 @@ class RawLibriDirHandler:
 
     def _get_chap_and_utt_ids(self,
                               chap_id: int,
-                              spk_id) -> Dict[int, Set[int]]:
+                              spk_id: int) -> Dict[int, Set[int]]:
         """Gets mapping from paragraph IDs to sets of utterance IDs in a chapter."""
 
         chapter_path = os.path.join(self._raw_ds_path,

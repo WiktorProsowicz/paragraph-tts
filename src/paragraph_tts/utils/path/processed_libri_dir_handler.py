@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains utils for handling paths in processed LibriTTS-R dataset."""
 import dataclasses
 import enum
@@ -6,13 +5,13 @@ import json
 import logging
 import os
 import sys
+from typing import Any
+from typing import Dict
 from typing import Iterator
 from typing import List
-from typing import Dict
-from typing import Any
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -121,11 +120,11 @@ class ProcessedLibriDirHandler:
         self._num_stats_path = os.path.join(ds_path, 'speaker_num_stats')
         self._spk_embeddings_path = os.path.join(ds_path, 'spk_embeddings')
 
-    def get_metadata(self):
+    def get_metadata(self) -> Dict[str, Any]:
         """Returns processed dataset's metadata."""
 
-        with open(self._metadata_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(self._metadata_path, encoding='utf-8') as f:
+            return json.load(f)  # type: ignore[no-any-return]
 
     def iter_samples(self) -> Iterator[SampleInfo]:
         """Iterates over all samples in the dataset."""
@@ -154,7 +153,7 @@ class ProcessedLibriDirHandler:
                                                    'input_data',
                                                    utt_id)
 
-                    with open(os.path.join(input_data_path, 'metadata.json'), 'r',
+                    with open(os.path.join(input_data_path, 'metadata.json'),
                               encoding='utf-8') as f:
                         metadata = json.load(f)
 
@@ -197,7 +196,7 @@ class ProcessedLibriDirHandler:
 
             context_path = os.path.join(contexts_path, 'original')
 
-            with open(os.path.join(context_path, 'metadata.json'), 'r', encoding='utf-8') as f:
+            with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
                 metadata = json.load(f)
 
             contexts.append(UtteranceContextInfo(
@@ -214,7 +213,7 @@ class ProcessedLibriDirHandler:
 
                 context_path = os.path.join(contexts_path, context_signature)
 
-                with open(os.path.join(context_path, 'metadata.json'), 'r', encoding='utf-8') as f:
+                with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
                     metadata = json.load(f)
 
                 contexts.append(UtteranceContextInfo(

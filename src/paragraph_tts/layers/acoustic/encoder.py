@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Contains definition of acoustic model's encoder module."""
 import torch
 from comp_trans_tts.model.transformers import conformer
@@ -123,4 +122,4 @@ class Encoder(torch.nn.Module):
                 input_mask=sequence_mask
             )
 
-        return outputs
+        return outputs  # type: ignore[no-any-return]
