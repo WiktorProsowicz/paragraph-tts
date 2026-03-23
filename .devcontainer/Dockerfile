@@ -18,4 +18,7 @@ RUN apt update \
 
 RUN wget -qO- https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 
+EXPOSE 5000
+EXPOSE 5001
+
 USER devcontainer
