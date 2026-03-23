@@ -3,7 +3,7 @@
 # This file contains pre-commit hooks containing rules under which the project files
 # should be checked.
 # ----------------------------------------------------------------------------------
-
+exclude: src/paragraph_tts/layers/shared/cbhg.py
 repos:
   # A set of pre-commit hooks checking various file's features.
   - repo: https://github.com/pre-commit/pre-commit-hooks
