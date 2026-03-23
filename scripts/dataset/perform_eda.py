@@ -32,12 +32,12 @@ Notes:
 """
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
-                             output_dir: str):
+                             output_dir: str) -> None:
 
     _logger().info('Saving example paragraphs...')
 
@@ -76,7 +76,7 @@ def _save_example_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
 
 
 def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
-                             output_dir: str):
+                             output_dir: str) -> None:
 
     _logger().info('Saving outlier utterances...')
     outliers = feature_extractor.get_outlier_utterances()
@@ -108,7 +108,7 @@ def _save_outlier_utterances(feature_extractor: data.eda.FeaturesExtractor,
 
 
 def _save_outlier_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
-                             output_dir: str):
+                             output_dir: str) -> None:
 
     _logger().info('Saving outlier paragraphs...')
 
@@ -135,7 +135,7 @@ def _save_outlier_paragraphs(feature_extractor: data.eda.FeaturesExtractor,
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='perform_eda')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Runs LibriTTS-R Exploratory Data Analysis."""
 
     utils.logging_utils.setup_logging('perform_eda')

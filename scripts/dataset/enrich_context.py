@@ -21,7 +21,7 @@ from paragraph_tts.utils.path import enriched_context_dir_handler
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -66,7 +66,7 @@ def _enrich_utterance_and_save(
         original_paragraph: Optional[raw_libri_dir_handler.OriginalParagraph],
         utt_info: raw_libri_dir_handler.UtteranceInfo,
         num_contexts_to_generate: int,
-        output_path: str):
+        output_path: str) -> None:
 
     utterance_for_enrichment = _prepare_utterance_for_enrichment(
         original_paragraph, utt_info, ds_metadata
@@ -108,7 +108,7 @@ def _should_enrich_utterance(utt_info: raw_libri_dir_handler.UtteranceInfo,
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='enrich_context')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Performs context enrichment for dataset samples."""
 
     logging_utils.setup_logging('enrich_context')
@@ -149,7 +149,7 @@ def main(script_cfg: omegaconf.DictConfig):
     enriched_dir_handler = enriched_context_dir_handler.EnrichedContextDirHandler(
         script_cfg.output_path)
 
-    def iter_filtered_utterances():
+    def iter_filtered_utterances():  # type: ignore
         for para_info in raw_path_handler.iter_all_paragraphs():
 
             original_paragraph = raw_path_handler.get_original_paragraph(
@@ -177,7 +177,7 @@ def main(script_cfg: omegaconf.DictConfig):
 
                 yield utt_info, para_info
 
-    utterances_to_enrich_l = list(iter_filtered_utterances())
+    utterances_to_enrich_l = list(iter_filtered_utterances())  # type: ignore
     random.shuffle(utterances_to_enrich_l)
 
     utterances_to_enrich = itertools.islice(utterances_to_enrich_l,

@@ -11,7 +11,7 @@ from typing import Iterator
 from typing import List
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -120,11 +120,11 @@ class ProcessedLibriDirHandler:
         self._num_stats_path = os.path.join(ds_path, 'speaker_num_stats')
         self._spk_embeddings_path = os.path.join(ds_path, 'spk_embeddings')
 
-    def get_metadata(self):
+    def get_metadata(self) -> Dict[str, Any]:
         """Returns processed dataset's metadata."""
 
         with open(self._metadata_path, encoding='utf-8') as f:
-            return json.load(f)
+            return json.load(f)  # type: ignore[no-any-return]
 
     def iter_samples(self) -> Iterator[SampleInfo]:
         """Iterates over all samples in the dataset."""

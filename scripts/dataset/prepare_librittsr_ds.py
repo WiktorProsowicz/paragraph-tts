@@ -15,12 +15,12 @@ from paragraph_tts.utils.path import enriched_context_dir_handler
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='prepare_librittsr_ds')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Runs LibriTTS-R preprocessing."""
 
     logging_utils.setup_logging('prepare_librittsr_ds')

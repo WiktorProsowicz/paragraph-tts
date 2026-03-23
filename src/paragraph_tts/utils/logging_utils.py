@@ -42,7 +42,7 @@ def _get_logging_config(script_signature: str, output_dir: str) -> Dict[str, Any
     custom_formatters = {'_ColorFormatter': _ColorFormatter}
 
     with open(LOGGING_CONFIG_PATH, encoding='utf-8') as config_file:
-        config_dict = yaml.safe_load(config_file.read())
+        config_dict: Dict[str, Any] = yaml.safe_load(config_file.read())
 
     for _, formatter in config_dict['formatters'].items():
         if '()' in formatter and formatter['()'] in custom_formatters:

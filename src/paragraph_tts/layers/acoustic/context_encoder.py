@@ -32,7 +32,7 @@ class _ContextProcessingBlock(torch.nn.Module):
 
         self._blocks = torch.nn.ModuleList(
             [
-                cbhg.CBHG(
+                cbhg.CBHG(  # type: ignore
                     in_dim=hidden_size,
                     K=cbhg_k_banks,
                     hidden_sizes=[hidden_size, hidden_size]
@@ -110,7 +110,7 @@ class _ContextProcessingBlock(torch.nn.Module):
             query_mask=phoneme_mask
         )
 
-        return chosen_context
+        return chosen_context  # type: ignore[no-any-return]
 
 
 class ContextEncoder(torch.nn.Module):

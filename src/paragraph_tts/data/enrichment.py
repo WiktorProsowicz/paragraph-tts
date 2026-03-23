@@ -12,7 +12,7 @@ import ollama
 from paragraph_tts.data import librittsr_helpers
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 

@@ -9,6 +9,7 @@ from typing import TypeAlias
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
 from torch_dev_utils.tts import text_prep
 
 from paragraph_tts.data import librittsr_helpers
@@ -491,9 +492,9 @@ class FeaturesExtractor:
             'sentence_count': itertools.islice(sentence_count_outliers, 5)
         }
 
-    def _get_speaker_figures(self) -> Dict[str, plt.Figure]:
+    def _get_speaker_figures(self) -> Dict[str, Figure]:
 
-        figures: Dict[str, plt.Figure] = {}
+        figures: Dict[str, Figure] = {}
 
         utt_stats_per_speaker = self._get_stats_per_speaker()
         bins = min(100, len(utt_stats_per_speaker['num_utt']))

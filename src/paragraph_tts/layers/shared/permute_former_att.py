@@ -4,7 +4,7 @@ from fast_transformers.attention import linear_attention
 from fast_transformers.feature_maps import fourier_features
 
 
-class PermuteFormerMHA(linear_attention.LinearAttention):
+class PermuteFormerMHA(linear_attention.LinearAttention):  # type: ignore
     """Multi-Head Attention module with PermuteFormer style relative positional encoding."""
 
     def __init__(self,
@@ -14,7 +14,7 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
 
         assert d_model % num_heads == 0, 'd_model % num_heads should be zero.'
 
-        def feature_map_factory(query_dims):
+        def feature_map_factory(query_dims):  # type: ignore
             return fourier_features.Favor(query_dims, feature_map_dim)
 
         super().__init__(d_model // num_heads, feature_map_factory)
@@ -37,7 +37,7 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
                 keys: torch.Tensor,
                 values: torch.Tensor,
                 key_mask: torch.Tensor,
-                query_mask: torch.Tensor):
+                query_mask: torch.Tensor) -> torch.Tensor:
         """Computes weighted sum of values given queries and keys."""
 
         batch_size, query_len, _ = queries.size()
@@ -80,12 +80,14 @@ class PermuteFormerMHA(linear_attention.LinearAttention):
 
         out = out.reshape(batch_size, query_len, -1)
 
-        return self._out_proj(out)
+        return self._out_proj(out)  # type: ignore[no-any-return]
 
-    def _generate_permutation_sequence(self, n_heads, feature_map_dim, max_seq_length):
+    def _generate_permutation_sequence(self,
+                                       n_heads: int,
+                                       feature_map_dim: int,
+                                       max_seq_length: int) -> torch.Tensor:
 
-        perm = [torch.randperm(feature_map_dim) for _ in range(n_heads)]
-        perm = torch.stack(perm, dim=0)
+        perm = torch.stack([torch.randperm(feature_map_dim) for _ in range(n_heads)], dim=0)
 
         expanded_perm = [torch.arange(feature_map_dim).unsqueeze(0).expand(n_heads, -1)]
 

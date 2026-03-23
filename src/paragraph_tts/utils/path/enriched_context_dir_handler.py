@@ -11,7 +11,7 @@ from torch_dev_utils.tts import text_prep
 from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 

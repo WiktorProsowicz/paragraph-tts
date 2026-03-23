@@ -12,11 +12,11 @@ import torch
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-class _DataSet(torch.utils.data.Dataset):
+class _DataSet(torch.utils.data.Dataset[dict[str, torch.Tensor]]):
     """Loads serialized data from disk."""
 
     def __init__(self,
@@ -39,7 +39,7 @@ class _DataSet(torch.utils.data.Dataset):
         self._energy_possible_values = torch.linspace(
             self._min_energy, self._max_energy, self._n_energy_bins)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._samples)
 
     def _scale(self,
@@ -211,7 +211,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
         self._n_energy_bins = n_energy_bins
         self._energy_bounds = energy_bounds
 
-    def setup(self, stage: str):
+    def setup(self, stage: str) -> None:
 
         _logger().debug('Setting up dataset...')
 
@@ -246,7 +246,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                  self._n_pitch_bins, self._pitch_bounds,
                                  self._n_energy_bins, self._energy_bounds)
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._train_set is not None, 'Make sure to call setup() before using this method!'
 
         return torch.utils.data.DataLoader(self._train_set,
@@ -256,7 +256,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            pin_memory=True,
                                            collate_fn=self._train_set.collate_fn)
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._val_set is not None, 'Make sure to call setup() before using this method!'
 
         return torch.utils.data.DataLoader(self._val_set,
@@ -266,7 +266,7 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            pin_memory=True,
                                            collate_fn=self._val_set.collate_fn)
 
-    def test_dataloader(self):
+    def test_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._test_set is not None, 'Make sure to call setup() before using this method!'
 
         return torch.utils.data.DataLoader(self._test_set,

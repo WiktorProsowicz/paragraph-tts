@@ -64,4 +64,4 @@ class Decoder(torch.nn.Module):
             outputs = block(outputs,
                             input_mask=sequence_mask)
 
-        return self._post_net(outputs).transpose(1, 2)
+        return self._post_net(outputs).transpose(1, 2)  # type: ignore[no-any-return]

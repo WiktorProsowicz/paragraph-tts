@@ -122,4 +122,4 @@ class Encoder(torch.nn.Module):
                 input_mask=sequence_mask
             )
 
-        return outputs
+        return outputs  # type: ignore[no-any-return]

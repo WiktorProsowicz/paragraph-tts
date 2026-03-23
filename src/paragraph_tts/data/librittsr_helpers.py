@@ -15,7 +15,7 @@ _SPEAKERS_PATH = os.path.join(_THIS_MODULE_DIR, 'res', 'speakers.tsv')
 _READER_BOOK_MAPPING_PATH = os.path.join(_THIS_MODULE_DIR, 'res', 'reader_book.tsv')
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -37,7 +37,7 @@ class SpeakerInfo:
 class LibriTTSRMetadata:
     """Contains metadata of the LibriTTS-R dataset."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initializes LibriTTS-R metadata."""
 
         books: Dict[str, BookInfo] = {}

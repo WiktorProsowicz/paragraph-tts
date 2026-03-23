@@ -25,7 +25,7 @@ from paragraph_tts.utils.path.enriched_context_dir_handler import EnrichedContex
 from paragraph_tts.utils.path.raw_libri_dir_handler import RawLibriDirHandler
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
@@ -100,7 +100,7 @@ class LibriTTSRPreprocessor:
                                                  batch_size=16)
         self._filter_cfg = filter_cfg
 
-    def run_for_speaker(self, speaker_id: int):
+    def run_for_speaker(self, speaker_id: int) -> None:
         """Runs preprocessing of samples for given speaker."""
 
         for chap_id in self._raw_path_handler.iter_chapters(speaker_id):
@@ -123,13 +123,13 @@ class LibriTTSRPreprocessor:
                             'spk_embeddings'), exist_ok=True)
                 self._prepare_spk_embedding(speaker_id)
 
-    def save_metadata(self, metadata: Dict[str, Any]):
+    def save_metadata(self, metadata: Dict[str, Any]) -> None:
         """Saves dataset metadata to output path."""
 
         with open(os.path.join(self._output_path, 'metadata.json'), 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=4)
 
-    def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo):
+    def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> None:
 
         dst_dir = os.path.join(self._output_path,
                                'samples',
@@ -268,7 +268,7 @@ class LibriTTSRPreprocessor:
     def _process_utterance(self,
                            utt_info: raw_libri_dir_handler.UtteranceInfo,
                            dst_dir: str,
-                           context_embeddings_dir: str):
+                           context_embeddings_dir: str) -> None:
 
         if not self._alignments_path_hand.has_alignment_for(utt_info):
             _logger().debug('No alignment found for utterance %s, skipping.',
@@ -311,7 +311,7 @@ class LibriTTSRPreprocessor:
 
     def _save_enriched_context_metadata(self,
                                         context: ContextForUtterance,
-                                        output_dir: str):
+                                        output_dir: str) -> None:
         metadata = {
             'n_preceding_sentences': len(context.preceding_sentences),
             'n_following_sentences': len(context.following_sentences),
@@ -405,14 +405,14 @@ class LibriTTSRPreprocessor:
 
         return True
 
-    def _save_normalization_stats_for_speaker(self, spk_id: int):
+    def _save_normalization_stats_for_speaker(self, spk_id: int) -> None:
 
         self._save_norm_stats(spk_id, 'f0')
         self._save_norm_stats(spk_id, 'energy')
 
     def _save_norm_stats(self,
                          spk_id: int,
-                         contour_file_name: str):
+                         contour_file_name: str) -> None:
 
         speaker_path = os.path.join(self._output_path,
                                     'samples',
@@ -445,7 +445,7 @@ class LibriTTSRPreprocessor:
 
     def _prepare_context_embeddings(self,
                                     context_sentences: List[str],
-                                    output_dir: str):
+                                    output_dir: str) -> None:
 
         if os.path.exists(output_dir):
             _logger().debug('Context embeddings for %s already exist, skipping.',
@@ -472,7 +472,7 @@ class LibriTTSRPreprocessor:
         torch.save([t.clone().to(torch.float16) for t in paired_embeddings],
                    os.path.join(output_dir, 'paired_embeddings.pt'))
 
-    def _prepare_spk_embedding(self, speaker_id: int):
+    def _prepare_spk_embedding(self, speaker_id: int) -> None:
 
         embedding_path = os.path.join(self._output_path,
                                       'spk_embeddings',

@@ -14,12 +14,12 @@ from paragraph_tts.utils import logging_utils
 ALIGNMENTS_URL = 'https://drive.google.com/uc?id=1KxTWMBajV0-wdACMalLkh_CzNTA3d5Vy'
 
 
-def _logger():
+def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='download_alignments')
-def main(script_cfg: omegaconf.DictConfig):
+def main(script_cfg: omegaconf.DictConfig) -> None:
     """Downloads alignments."""
 
     logging_utils.setup_logging('download_alignments')
