@@ -6,6 +6,25 @@ import librosa
 import numpy as np
 
 
+def length_in_sec_of_file(file_path: str) -> float:
+    """Calculates length of the given wav file in seconds without reading its payload."""
+
+    return librosa.get_duration(path=file_path, sr=librosa.get_samplerate(file_path))
+
+
+def load_wav_raw(file_path: str, sr: int | None = None) -> np.ndarray:
+    """Loads a waveform from a file without any trimming or padding.
+
+    Args:
+        file_path: Path to the audio file.
+        sr: Sampling rate. If None, the sampling rate is inferred from the file.
+    """
+
+    wav, _ = librosa.load(file_path, sr=sr)
+
+    return wav
+
+
 class AudioProcessor:
     """Processes audio data."""
 
@@ -78,19 +97,3 @@ class AudioProcessor:
         )
 
         return np.asanyarray(wav)
-
-    def load_wav_raw(self, file_path: str) -> np.ndarray:
-        """Loads a waveform from a file without any trimming or padding.
-
-        Args:
-            file_path: Path to the audio file.
-        """
-
-        wav, _ = librosa.load(file_path, sr=self._sr)
-
-        return wav
-
-    def length_in_sec_of_file(self, file_path: str) -> float:
-        """Calculates length of the given wav file in seconds without reading its payload."""
-
-        return librosa.get_duration(path=file_path, sr=self._sr)

@@ -1,11 +1,4 @@
 ---
 raw_ds_path: tmp/LibriTTS_R
 output_dir: tmp/eda
-choose_splits:
-  - dev-clean
-  - dev-other
-  - test-clean
-  - test-other
-  - train-clean-100
-  - train-clean-360
-  - train-other-500
+choose_splits: null
