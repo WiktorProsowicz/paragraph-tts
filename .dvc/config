@@ -1,0 +1,5 @@
+[core]
+    remote = aws-remote
+['remote "aws-remote"']
+    url = s3://paragraph-tts-dvc-storage
+    region = eu-north-1
