@@ -38,6 +38,9 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     _logger().info('Collecting speakers stats...')
     eda_processor.save_speakers_stats(output_dir / 'speakers_stats')
 
+    _logger().info('Collecting paragraphs stats...')
+    eda_processor.save_paragraph_stats(output_dir / 'paragraphs_stats')
+
 
 if __name__ == '__main__':
     main()  # pylint: disable=E1120
