@@ -13,15 +13,19 @@ from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data.preprocessing import audio as audio_prep
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.data.eda import utils as eda_utils
+from paragraph_tts.utils.path import alignments_dir_handler
 
 
 class RawEDA:
     """Extracts various features from the dataset."""
 
-    def __init__(self, raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler):
+    def __init__(self,
+                 raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler,
+                 alignments_handler: alignments_dir_handler.AlignmentsDirHandler):
         """Inits the extractor."""
 
         self._raw_path_handler = raw_ds_handler
+        self._alignments_handler = alignments_handler
         self._raw_ds_meta = librittsr_helpers.LibriTTSRMetadata()
 
         sns.set_theme(style='darkgrid')
@@ -83,6 +87,38 @@ class RawEDA:
 
         self._save_paragraph_stats_for_df(utt_df[utt_df['paragraph_has_all_wav']],
                                           output_dir / 'paragraphs_with_all_audio')
+
+    def save_alignments_stats(self, output_dir: pathlib.Path) -> None:
+        """Dumps statistics related to phoneme alignments to an output directory."""
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        align_df = pd.DataFrame(self._get_alignments_df())
+
+        primary_stats = {
+            'Num. phonemes': align_df['n_phonemes'],
+            'Min. phoneme length (sec)': align_df['minimum_phoneme_length'],
+            'Max. phoneme length (sec)': align_df['maximum_phoneme_length'],
+            'Avg. phoneme length (sec)': align_df['avg_phoneme_length']
+        }
+
+        other_stats = {
+            'Total num. utterances': len(align_df),
+            'Total num. utterances with audio': int(align_df['has_sound'].sum()),
+            'Total length (sec) of aligned audio': float(
+                align_df[align_df['has_sound']]['length_sec'].sum()),
+            'Num. utterances without alignment': int(align_df['n_phonemes'].isna().sum()),
+            'Num. utterances with audio but without alignment': int(
+                align_df[align_df['has_sound'] & align_df['n_phonemes'].isna()].shape[0]),
+        }
+
+        with output_dir.joinpath('primary_stats.json').open('w') as f:
+            json.dump({
+                **{k: v.describe(percentiles=[0.25, 0.5, 0.75, 0.95, 0.99]).to_dict()
+                   for k, v in primary_stats.items()},
+                **other_stats
+            },
+                f, indent=4, ensure_ascii=False)
 
     def _save_paragraph_stats_for_df(self,
                                      utt_df: pd.DataFrame,
@@ -256,3 +292,32 @@ class RawEDA:
                         row['length_sec'] = audio_prep.length_in_sec_of_file(utt.wav_path)
 
                     yield row
+
+    def _get_alignments_df(self) -> Iterator[dict[str, Any]]:
+        """Returns a DataFrame with information about phoneme alignments."""
+
+        for spk_id in self._raw_path_handler.iter_speakers():
+            for utt_info in self._raw_path_handler.iter_utterances_for_spk(spk_id):
+
+                row = {
+                    'spk_id': spk_id,
+                    'chap_id': utt_info.chap_id,
+                    'para_id': utt_info.para_id,
+                    'utt_id': utt_info.utt_id,
+                    'has_sound': utt_info.wav_path is not None
+                }
+
+                if self._alignments_handler.has_alignment_for(utt_info):
+
+                    alignment = self._alignments_handler.get_alignment_for(utt_info)
+                    intervals = alignment.get_tier_by_name('phones').intervals
+
+                    row['n_phonemes'] = len(intervals)
+                    row['length_sec'] = intervals[-1].end_time
+                    row['minimum_phoneme_length'] = min(interval.end_time - interval.start_time
+                                                        for interval in intervals)
+                    row['maximum_phoneme_length'] = max(interval.end_time - interval.start_time
+                                                        for interval in intervals)
+                    row['avg_phoneme_length'] = row['length_sec'] / row['n_phonemes']
+
+                yield row

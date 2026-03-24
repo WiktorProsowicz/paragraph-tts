@@ -10,6 +10,7 @@ import omegaconf
 from paragraph_tts.data.eda import raw_eda
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path import alignments_dir_handler
 
 
 def _logger() -> logging.Logger:
@@ -33,13 +34,18 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         choose_splits=script_cfg.choose_splits
     )
 
-    eda_processor = raw_eda.RawEDA(raw_ds_handler)
+    alignments_handler = alignments_dir_handler.AlignmentsDirHandler(script_cfg.alignments_path)
+
+    eda_processor = raw_eda.RawEDA(raw_ds_handler, alignments_handler)
 
     _logger().info('Collecting speakers stats...')
     eda_processor.save_speakers_stats(output_dir / 'speakers_stats')
 
     _logger().info('Collecting paragraphs stats...')
     eda_processor.save_paragraph_stats(output_dir / 'paragraphs_stats')
+
+    _logger().info('Collecting alignments stats...')
+    eda_processor.save_alignments_stats(output_dir / 'alignments_stats')
 
 
 if __name__ == '__main__':

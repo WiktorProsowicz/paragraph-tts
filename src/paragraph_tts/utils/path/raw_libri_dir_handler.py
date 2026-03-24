@@ -17,6 +17,9 @@ class UtteranceInfo:
     """Contains information about an utterance."""
 
     utt_id: int
+    spk_id: int
+    chap_id: int
+    para_id: int
     normalized_text: str
     wav_path: pathlib.Path | None = None
 
@@ -170,6 +173,9 @@ class RawLibriDirHandler:
                 chap_id=chapter_id,
                 para_id=int(para_id),
                 utterances=[UtteranceInfo(utt_id=int(utt_id),
+                                          spk_id=spk_id,
+                                          chap_id=chapter_id,
+                                          para_id=int(para_id),
                                           normalized_text=text,
                                           wav_path=None)
                             for utt_id, text in sorted(utt_ids_and_texts)]
