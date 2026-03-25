@@ -1,0 +1,5 @@
+outs:
+- md5: 8595a5d7daccf7c9298e1cc2df19b164
+  size: 139873456
+  hash: md5
+  path: librittsr_alignments/librittsr_alignments.tar.bz2

@@ -2,13 +2,11 @@
 import csv
 import dataclasses
 import logging
+from collections import defaultdict
+import pathlib
 import os
-import re
-from typing import Dict
+import sys
 from typing import Iterator
-from typing import List
-from typing import Optional
-from typing import Set
 
 
 def _logger() -> logging.Logger:
@@ -20,11 +18,11 @@ class UtteranceInfo:
     """Contains information about an utterance."""
 
     utt_id: int
-    para_id: int
-    chap_id: int
     spk_id: int
-    text_path: str
-    wav_path: str
+    chap_id: int
+    para_id: int
+    normalized_text: str
+    wav_path: pathlib.Path | None = None
 
 
 @dataclasses.dataclass
@@ -32,26 +30,9 @@ class ParagraphInfo:
     """Contains information about a paragraph."""
 
     spk_id: int
-    para_id: int
     chap_id: int
-    is_complete: bool
+    para_id: int
     utterances: list[UtteranceInfo]
-
-    def __str__(self) -> str:
-        return f'Paragraph(spk_id={self.spk_id}, chap_id={self.chap_id}, para_id={self.para_id})'
-
-
-@dataclasses.dataclass
-class OriginalParagraph:
-    """Contains all original sentences in a paragraph.
-
-    The sentences are not necessarily present in the dataset as wav samples.
-    """
-
-    spk_id: int
-    chap_id: int
-    para_id: int
-    sentences: Dict[int, str]
 
 
 class RawLibriDirHandler:
@@ -59,7 +40,7 @@ class RawLibriDirHandler:
 
     def __init__(self,
                  raw_ds_path: str,
-                 choose_splits: Optional[List[str]] = None):
+                 choose_splits: list[str] | None = None):
         """
         Args:
             raw_ds_path: Root path to the LibriTTS-R raw ds.
@@ -106,194 +87,109 @@ class RawLibriDirHandler:
 
                 yield int(spk_id)
 
-    def iter_chapters(self, speaker_id: Optional[int] = None) -> Iterator[int]:
-        """Iterates over chapter IDs for a given speaker."""
-
-        speaker_ids = [speaker_id] if speaker_id is not None else list(
-            self.iter_speakers())
-
-        for spk_id in speaker_ids:
-            speaker_path = os.path.join(
-                self._raw_ds_path,
-                self._spk_to_split[spk_id],
-                str(spk_id)
-            )
-
-            yield from map(int, os.listdir(speaker_path))
-
     def iter_all_paragraphs(self) -> Iterator[ParagraphInfo]:
         """Iterates over all paragraphs in the dataset."""
 
         for spk_id in self.iter_speakers():
-            for chap_id in self.iter_chapters(spk_id):
-                yield from self.iter_paragraphs(spk_id, chap_id)
-
-    def iter_paragraphs(self, spk_id: int, chapter_id: int) -> Iterator[ParagraphInfo]:
-        """Iterates over paragraphs in a chapter.
-
-        Args:
-            spk_id: Speaker ID.
-            chapter_path: Path to the chapter directory.
-        """
-
-        chapter_path = os.path.join(
-            self._raw_ds_path,
-            self._spk_to_split[spk_id],
-            str(spk_id),
-            str(chapter_id)
-        )
-
-        para_to_utts = self._get_chap_and_utt_ids(chapter_id, spk_id)
-
-        for para_id in sorted(para_to_utts.keys()):
-
-            utterances = []
-
-            for utt_id in sorted(para_to_utts[para_id]):
-                base_name = f'{spk_id}_{chapter_id}_{para_id:06d}_{utt_id:06d}'
-
-                utt_info = UtteranceInfo(utt_id=utt_id,
-                                         para_id=para_id,
-                                         chap_id=chapter_id,
-                                         spk_id=spk_id,
-                                         text_path=os.path.join(
-                                             chapter_path,
-                                             base_name + '.normalized.txt'),
-                                         wav_path=os.path.join(
-                                             chapter_path,
-                                             base_name + '.wav'))
-
-                if any(not os.path.exists(p) for p in (utt_info.text_path, utt_info.wav_path)):
-                    _logger().debug('Skipping utterance with missing files: %s.',
-                                    utt_info)
-                    continue
-
-                utterances.append(utt_info)
-
-            yield ParagraphInfo(
-                spk_id=spk_id,
-                para_id=para_id,
-                chap_id=chapter_id,
-                utterances=utterances,
-                is_complete=self._is_chapter_complete(
-                    sorted(para_to_utts[para_id]))
-            )
+            yield from self.iter_paragraphs(spk_id)
 
     def iter_utterances_for_spk(self, spk_id: int) -> Iterator[UtteranceInfo]:
         """Iterates over all utterances for a given speaker."""
 
-        for chap_id in self.iter_chapters(spk_id):
-            for para_info in self.iter_paragraphs(spk_id, chap_id):
-                yield from para_info.utterances
+        for para_info in self.iter_paragraphs(spk_id):
+            yield from para_info.utterances
 
-    def get_original_paragraph(self, para_info: ParagraphInfo) -> Optional[OriginalParagraph]:
-        """Returns original, complete version of a paragraph."""
+    def iter_paragraphs(self, spk_id: int) -> Iterator[ParagraphInfo]:
+        """Iterates over all paragraphs for a given speaker.
 
-        books_file_path = os.path.join(
+        Reads paragraph data from .book.tsv files across all chapters.
+
+        Args:
+            spk_id: Speaker ID.
+        """
+
+        speaker_path = os.path.join(
             self._raw_ds_path,
-            self._spk_to_split[para_info.spk_id],
-            str(para_info.spk_id),
-            str(para_info.chap_id),
-            f'{para_info.spk_id}_{para_info.chap_id}.book.tsv')
-
-        if not os.path.exists(books_file_path):
-            _logger().debug('Missing .books.tsv file: %s', books_file_path)
-            return None
-
-        sought_id_prefix = f'{para_info.spk_id}_{para_info.chap_id}_{para_info.para_id:06d}'
-
-        context_sentences: Dict[int, str] = {}
-
-        with open(books_file_path, encoding='utf-8') as f:
-
-            proper_rows = filter(lambda row: row[0].startswith(sought_id_prefix),
-                                 csv.reader(f, delimiter='\t', quotechar=None))
-
-            for row in proper_rows:
-                if len(row) < 3:
-                    _logger().debug('Malformed row %s in .books.tsv file: %s', row, books_file_path)
-                    return None
-
-                utt_id = int(row[0].split('_')[-1])
-                sentence = row[2].strip()
-
-                context_sentences[utt_id] = sentence
-
-        return OriginalParagraph(
-            spk_id=para_info.spk_id,
-            chap_id=para_info.chap_id,
-            para_id=para_info.para_id,
-            sentences=context_sentences
+            self._spk_to_split[spk_id],
+            str(spk_id)
         )
 
-    def get_utterance(self, spk_id: int, chap_id: int, para_id: int,
-                      utt_id: int) -> Optional[UtteranceInfo]:
-        """Returns information about a specific utterance, if it exists."""
+        if not os.path.isdir(speaker_path):
+            _logger().debug('Speaker path does not exist: %s', speaker_path)
+            return
 
-        base_name = f'{spk_id}_{chap_id}_{para_id:06d}_{utt_id:06d}'
+        for chapter_id in os.listdir(speaker_path):
 
-        chapter_path = os.path.join(
+            for para_info in self._get_paragraph_drafts(spk_id, int(chapter_id)):
+
+                for utt_info in para_info.utterances:
+
+                    wav_path = os.path.join(
+                        self._raw_ds_path,
+                        self._spk_to_split[spk_id],
+                        str(spk_id),
+                        str(chapter_id),
+                        f'{spk_id}_{chapter_id}_{para_info.para_id:06d}_{utt_info.utt_id:06d}.wav'
+                    )
+
+                    if os.path.exists(wav_path):
+                        utt_info.wav_path = pathlib.Path(wav_path)
+
+                yield para_info
+
+    def get_paragraph(self, spk_id: int, chap_id: int, para_id: int) -> ParagraphInfo:
+        """Returns a specific paragraph by speaker, chapter, and paragraph ID."""
+
+        for para_info in self.iter_paragraphs(spk_id):
+
+            if para_info.chap_id == chap_id and para_info.para_id == para_id:
+                return para_info
+
+        _logger().critical('Paragraph not found: spk_id=%d, chap_id=%d, para_id=%d',
+                           spk_id, chap_id, para_id)
+        sys.exit(1)
+
+    def _get_paragraph_drafts(self,
+                              spk_id: int,
+                              chapter_id: int) -> Iterator[ParagraphInfo]:
+        """Composes initial paragraph drafts from .book.tsv."""
+
+        book_tsv_path = os.path.join(
             self._raw_ds_path,
             self._spk_to_split[spk_id],
             str(spk_id),
-            str(chap_id)
+            str(chapter_id),
+            f'{spk_id}_{chapter_id}.book.tsv'
         )
 
-        utt_info = UtteranceInfo(utt_id=utt_id,
-                                 para_id=para_id,
-                                 chap_id=chap_id,
-                                 spk_id=spk_id,
-                                 text_path=os.path.join(
-                                     chapter_path,
-                                     base_name + '.normalized.txt'),
-                                 wav_path=os.path.join(
-                                     chapter_path,
-                                     base_name + '.wav'))
+        if not os.path.exists(book_tsv_path):
+            _logger().debug('Missing book.tsv file: %s', book_tsv_path)
+            return
 
-        if any(not os.path.exists(p) for p in (utt_info.text_path, utt_info.wav_path)):
-            _logger().debug('Utterance with missing files: %s.', utt_info)
-            return None
+        para_to_utt_ids = defaultdict(set)
 
-        return utt_info
+        with open(book_tsv_path, encoding='utf-8') as f:
 
-    def _get_chap_and_utt_ids(self,
-                              chap_id: int,
-                              spk_id: int) -> Dict[int, Set[int]]:
-        """Gets mapping from paragraph IDs to sets of utterance IDs in a chapter."""
+            for row in csv.reader(f, delimiter='\t', quotechar=None):
 
-        chapter_path = os.path.join(self._raw_ds_path,
-                                    self._spk_to_split[spk_id],
-                                    str(spk_id),
-                                    str(chap_id))
+                if len(row) < 4:
+                    _logger().debug('Failed to parse row in %s: %s', book_tsv_path, row)
+                    return
 
-        name_pattern = re.compile(r'\d+_\d+_(\d+)_(\d+)\..+')
+                _, _, para_id, utt_id = row[0].split('_')
 
-        para_to_utts: Dict[int, Set[int]] = {}
+                para_to_utt_ids[para_id].add((utt_id, row[2]))
 
-        for file_name in os.listdir(chapter_path):
-            match = name_pattern.match(file_name)
-
-            if match is None:
-                continue
-
-            para_id = int(match.group(1))
-            utt_id = int(match.group(2))
-
-            if para_id not in para_to_utts:
-                para_to_utts[para_id] = set()
-
-            para_to_utts[para_id].add(utt_id)
-
-        return para_to_utts
-
-    def _is_chapter_complete(self, utt_ids: List[int]) -> bool:
-        """Checks if sorted utterances IDs are contiguous and start with 0."""
-
-        if len(utt_ids) == 0 or utt_ids[0] != 0:
-            return False
-
-        for prev_id, curr_id in zip(utt_ids, utt_ids[1:]):
-            if curr_id != prev_id + 1:
-                return False
-
-        return True
+        for para_id, utt_ids_and_texts in para_to_utt_ids.items():
+            yield ParagraphInfo(
+                spk_id=spk_id,
+                chap_id=chapter_id,
+                para_id=int(para_id),
+                utterances=[UtteranceInfo(utt_id=int(utt_id),
+                                          spk_id=spk_id,
+                                          chap_id=chapter_id,
+                                          para_id=int(para_id),
+                                          normalized_text=text,
+                                          wav_path=None)
+                            for utt_id, text in sorted(utt_ids_and_texts)]
+            )

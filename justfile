@@ -49,3 +49,9 @@ run_pre_commit:
     echo "Running pre-commit hooks..."
     source .venv/bin/activate
     pre-commit run --all-files
+
+# Run an arbitrary python script inside the virtual environment.
+run_python *args:
+    #!/usr/bin/env bash
+    source .venv/bin/activate
+    python "$@"
