@@ -1,27 +1,22 @@
 ---
 raw_ds_path: tmp/LibriTTS_R
-processed_ds_output_path: tmp/librittsr_processed
-alignments_path: tmp/librittsr_alignments
-enriched_contexts_path: tmp/librittsr_enriched_contexts
-prepare_speaker_embeddings: true
-embedders_device: cpu
-filters:
-  # Maximum number of words in an utterance.
-  max_words_in_utterance: 100
-  # Minimum number of words in an utterance.
-  min_words_in_utterance: 1
-  # Max number of utterances in either original or enriched context.
-  max_context_length: 6
-  # Min number of utterances in either original or enriched context.
-  min_context_length: 3
-  # Minimum number of words in either original or enriched context.
-  min_words_in_context: 20
-  # Maximum number of words in either original or enriched context.
-  max_words_in_context: 200
-  # List of DS splits to be considered.
-  choose_splits: [dev-clean, dev-other, test-clean, test-other, train-clean-100, train-clean-360, train-other-500]
-  allow_fragmented_sentences: true
-  # Minimum duration of a sentence in seconds.
-  min_utterance_duration: 1.0
-  # Maximum duration of a sentence in seconds.
-  max_utterance_duration: 40.0
+choose_splits: null
+alignments_path: data/librittsr_alignments
+output_dir: tmp/librittsr_processed
+metadata_output_dir: tmp/librittsr_processing_metadata
+
+processor_cfg:
+  multi_speaker: true
+  embedders_device: cuda
+  n_word_boundaries: [5, 180]
+  n_utterance_boundaries: [1, 10]
+  duration_boundaries: [1.0, 30.0]
+  bert_embedder_model: microsoft/deberta-v3-large
+  audio_processing_cfg:
+    sr: 22050
+    hop_length: 256
+    win_length: 1024
+    n_mels: 80
+    fmin: 0
+    fmax: 8000
+    trim_top_db: 23

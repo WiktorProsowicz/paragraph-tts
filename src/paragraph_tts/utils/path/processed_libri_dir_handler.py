@@ -10,6 +10,10 @@ from typing import Dict
 from typing import Iterator
 from typing import List
 
+import pydantic
+
+from paragraph_tts.utils.path import raw_libri_dir_handler
+
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
@@ -104,6 +108,19 @@ class SampleInfo:
     metadata: Dict[str, Any]
 
 
+class ProcessedUtterance(pydantic.BaseModel):
+    """Represents an utterance in the processed dataset."""
+
+    raw_utterance: raw_libri_dir_handler.UtteranceInfo
+
+
+class ProcessedParagraph(pydantic.BaseModel):
+    """Represents a paragraph in the processed dataset."""
+
+    raw_paragraph: raw_libri_dir_handler.ParagraphInfo
+    utterances:
+
+
 class ProcessedLibriDirHandler:
     """Manages access to content inside directory with processed LibriTTS-R ds."""
 
@@ -125,6 +142,8 @@ class ProcessedLibriDirHandler:
 
         with open(self._metadata_path, encoding='utf-8') as f:
             return json.load(f)  # type: ignore[no-any-return]
+
+    def create_new_paragraph()
 
     def iter_samples(self) -> Iterator[SampleInfo]:
         """Iterates over all samples in the dataset."""
