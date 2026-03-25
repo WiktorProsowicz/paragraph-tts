@@ -8,13 +8,14 @@ import os
 import sys
 from typing import Iterator
 
+import pydantic
+
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-@dataclasses.dataclass
-class UtteranceInfo:
+class UtteranceInfo(pydantic.BaseModel):
     """Contains information about an utterance."""
 
     utt_id: int
@@ -25,8 +26,7 @@ class UtteranceInfo:
     wav_path: pathlib.Path | None = None
 
 
-@dataclasses.dataclass
-class ParagraphInfo:
+class ParagraphInfo(pydantic.BaseModel):
     """Contains information about a paragraph."""
 
     spk_id: int

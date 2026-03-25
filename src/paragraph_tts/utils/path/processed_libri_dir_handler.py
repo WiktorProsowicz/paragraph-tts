@@ -4,6 +4,7 @@ import enum
 import json
 import logging
 import os
+import pathlib
 import sys
 from typing import Any
 from typing import Dict
@@ -27,85 +28,19 @@ class SentencePosType(enum.Enum):
     MIDDLE = 2
     ONLY = 3
 
+    @staticmethod
+    def from_utt_id(utt_id: int, n_utterances_in_paragraph: int) -> 'SentencePosType':
 
-def get_sentence_pos_type(n_preceding_sentences: int,
-                          n_following_sentences: int) -> SentencePosType:
-    """Determines position of a sentence in a paragraph.
+        if n_utterances_in_paragraph == 1:
+            return SentencePosType.ONLY
 
-    Args:
-        n_preceding_sentences: Number of sentences preceding the sentence.
-        n_following_sentences: Number of sentences following the sentence.
+        if utt_id == 0:
+            return SentencePosType.FIRST
 
-    Returns:
-        Position type of the sentence.
-    """
+        if utt_id == n_utterances_in_paragraph - 1:
+            return SentencePosType.LAST
 
-    if n_preceding_sentences == 0 and n_following_sentences == 0:
-        return SentencePosType.ONLY
-
-    if n_preceding_sentences == 0:
-        return SentencePosType.FIRST
-
-    if n_following_sentences == 0:
-        return SentencePosType.LAST
-
-    return SentencePosType.MIDDLE
-
-
-@dataclasses.dataclass
-class UtteranceContextInfo:
-    """Contains information about paragraph context sentences."""
-
-    is_original: bool
-    utterance_pos: SentencePosType
-    token_embeddings_path: str
-    pse_path: str
-
-    metadata: Dict[str, Any]
-
-
-@dataclasses.dataclass
-class UtteranceDataInfo:
-    """Contains paths to data related to a single utterance."""
-
-    bert_embeddings_pth: str
-    phoneme_ids_pth: str
-
-    spec_pth: str
-    f0_pth: str
-    energy_pth: str
-    durations_pth: str
-
-    ling_stats_pth: str
-    pos_tags_pth: str
-
-    bert_to_word_pool_matrix_pth: str
-    phone_to_spec_indices_pth: str
-    spec_to_word_pool_matrix_pth: str
-    word_to_phoneme_indices_pth: str
-
-
-@dataclasses.dataclass
-class SpeakerNumericalStats:
-    """Contains paths containing speaker-specific numerical data."""
-    f0_stats_pth: str
-    energy_stats_pth: str
-
-
-@dataclasses.dataclass
-class SampleInfo:
-    """Contains information about a sample in processed dataset."""
-
-    spk_id: int
-    chap_id: int
-    para_id: int
-    utt_id: int
-
-    contexts: List[UtteranceContextInfo]
-    input_data: UtteranceDataInfo
-    spk_embedding_path: str
-
-    metadata: Dict[str, Any]
+        return SentencePosType.MIDDLE
 
 
 class ProcessedUtterance(pydantic.BaseModel):
@@ -113,18 +48,48 @@ class ProcessedUtterance(pydantic.BaseModel):
 
     raw_utterance: raw_libri_dir_handler.UtteranceInfo
 
+    normalized_text_path: pathlib.Path
+
+    spec_pth: pathlib.Path
+    f0_pth: pathlib.Path
+    energy_pth: pathlib.Path
+    durations_pth: pathlib.Path
+
+    ling_stats_pth: pathlib.Path
+    pos_tags_pth: pathlib.Path
+
+    bert_to_word_pool_matrix_pth: pathlib.Path
+    phone_to_spec_indices_pth: pathlib.Path
+    spec_to_word_pool_matrix_pth: pathlib.Path
+    word_to_phoneme_indices_pth: pathlib.Path
+
+    utterance_pos: SentencePosType
+
+
+class SpeakerInfo(pydantic.BaseModel):
+    """Represents a speaker in the processed dataset."""
+
+    spk_id: int
+    embedding_path: pathlib.Path
+    energy_stats_path: pathlib.Path
+    f0_stats_path: pathlib.Path
+
 
 class ProcessedParagraph(pydantic.BaseModel):
     """Represents a paragraph in the processed dataset."""
 
     raw_paragraph: raw_libri_dir_handler.ParagraphInfo
-    utterances:
+    speaker_info: SpeakerInfo
+    utterances: list[ProcessedUtterance]
+
+    token_embeddings_path: pathlib.Path
+    pse_path: pathlib.Path
 
 
 class ProcessedLibriDirHandler:
     """Manages access to content inside directory with processed LibriTTS-R ds."""
 
-    def __init__(self, ds_path: str):
+    def __init__(self, ds_path: pathlib.Path):
         """
         Args:
             ds_path: Path to processed ds.
@@ -132,10 +97,8 @@ class ProcessedLibriDirHandler:
 
         os.makedirs(ds_path, exist_ok=True)
 
-        self._metadata_path = os.path.join(ds_path, 'metadata.json')
-        self._samples_path = os.path.join(ds_path, 'samples')
-        self._num_stats_path = os.path.join(ds_path, 'speaker_num_stats')
-        self._spk_embeddings_path = os.path.join(ds_path, 'spk_embeddings')
+        self._root_path = ds_path
+        self._speakers_path = ds_path / 'speakers'
 
     def get_metadata(self) -> Dict[str, Any]:
         """Returns processed dataset's metadata."""
@@ -143,147 +106,106 @@ class ProcessedLibriDirHandler:
         with open(self._metadata_path, encoding='utf-8') as f:
             return json.load(f)  # type: ignore[no-any-return]
 
-    def create_new_paragraph()
+    def create_new_paragraph(self,
+                             raw_paragraph: raw_libri_dir_handler.ParagraphInfo) -> ProcessedParagraph:
+        """Initializes a new paragraph in the processed dataset based on the raw paragraph."""
 
-    def iter_samples(self) -> Iterator[SampleInfo]:
-        """Iterates over all samples in the dataset."""
+        paragraphs_dir = self._speakers_path / str(raw_paragraph.spk_id) / 'paragraphs'
 
-        for spk_id in os.listdir(self._samples_path):
+        paragraph_dir = paragraphs_dir / f'{raw_paragraph.chap_id}_{raw_paragraph.para_id}'
+        paragraph_dir.mkdir(parents=True, exist_ok=True)
 
-            for para_signature in os.listdir(os.path.join(self._samples_path, spk_id)):
+        with open(paragraph_dir / 'raw_paragraph.json', 'w', encoding='utf-8') as f:
+            json.dump(raw_paragraph.model_dump(), f, ensure_ascii=False, indent=4)
 
-                chap_id, para_id = tuple(para_signature.split('_'))
+        utterances_dir = paragraph_dir / 'utterances'
+        utterances_dir.mkdir(parents=True, exist_ok=True)
 
-                contexts_path = os.path.join(self._samples_path,
-                                             spk_id,
-                                             para_signature,
-                                             'context_embeddings')
+        for utt_info in raw_paragraph.utterances:
 
-                for utt_id in os.listdir(os.path.join(self._samples_path,
-                                                      spk_id,
-                                                      para_signature,
-                                                      'input_data')):
+            utterance_dir = utterances_dir / str(utt_info.utt_id)
+            utterance_dir.mkdir(parents=True, exist_ok=True)
 
-                    contexts = self._obtain_contexts_for_utterance(contexts_path, int(utt_id))
+            with open(utterance_dir / f'raw_utterance.json', 'w', encoding='utf-8') as f:
+                json.dump(utt_info.model_dump(), f, ensure_ascii=False, indent=4)
 
-                    input_data_path = os.path.join(self._samples_path,
-                                                   spk_id,
-                                                   para_signature,
-                                                   'input_data',
-                                                   utt_id)
+        return self._obtain_paragraph(paragraph_dir)
 
-                    with open(os.path.join(input_data_path, 'metadata.json'),
-                              encoding='utf-8') as f:
-                        metadata = json.load(f)
+    def iter_utterances(self) -> Iterator[ProcessedUtterance]:
+        """Iterates over all utterances in the dataset."""
 
-                    yield SampleInfo(
-                        spk_id=int(spk_id),
-                        chap_id=int(chap_id),
-                        para_id=int(para_id),
-                        utt_id=int(utt_id),
-                        contexts=contexts,
-                        input_data=self._obtain_utterance_data_info(input_data_path),
-                        spk_embedding_path=os.path.join(self._spk_embeddings_path, f'{spk_id}.pt'),
-                        metadata=metadata
-                    )
+        for spk_id in self._iter_speakers():
 
-    def get_numerical_stats(self, spk_id: int) -> SpeakerNumericalStats:
-        """Returns paths to speaker-specific numerical stats."""
+            spk_path = self._speakers_path / str(spk_id)
+            paragraphs_path = spk_path / 'paragraphs'
 
-        f0_stats_pth = os.path.join(self._num_stats_path, str(spk_id), 'f0_stats.pt')
-        energy_stats_pth = os.path.join(self._num_stats_path, str(spk_id), 'energy_stats.pt')
+            for paragraph_dir in paragraphs_path.iterdir():
 
-        for path in [f0_stats_pth, energy_stats_pth]:
-            if not os.path.exists(path):
-                _logger().critical('Path %s does not exist!', path)
-                sys.exit(1)
+                paragraph = self._obtain_paragraph(paragraph_dir)
 
-        return SpeakerNumericalStats(
-            f0_stats_pth=f0_stats_pth,
-            energy_stats_pth=energy_stats_pth
+                for utterance in paragraph.utterances:
+                    yield utterance
+
+    def _obtain_speaker_info(self, spk_id: int) -> SpeakerInfo:
+        """Initializes or retrieves speaker info for a given speaker ID."""
+
+        spk_path = self._speakers_path / str(spk_id)
+        spk_path.mkdir(parents=True, exist_ok=True)
+
+        paragraphs_path = spk_path / 'paragraphs'
+        paragraphs_path.mkdir(parents=True, exist_ok=True)
+
+        return SpeakerInfo(
+            spk_id=spk_id,
+            embedding_path=spk_path / 'embedding.pt',
+            energy_stats_path=spk_path / 'energy_stats.pt',
+            f0_stats_path=spk_path / 'f0_stats.pt'
         )
 
-    def _obtain_contexts_for_utterance(self,
-                                       contexts_path: str,
-                                       utt_id: int) -> List[UtteranceContextInfo]:
+    def _obtain_paragraph(self, paragraph_dir: pathlib.Path) -> ProcessedParagraph:
+        """Reads paragraph info from the given paragraph directory."""
 
-        contexts: List[UtteranceContextInfo] = []
+        with open(paragraph_dir / 'raw_paragraph.json', encoding='utf-8') as f:
+            raw_paragraph = raw_libri_dir_handler.ParagraphInfo.model_validate(json.load(f))
 
-        context_signatures = os.listdir(contexts_path)
+        speaker_info = self._obtain_speaker_info(raw_paragraph.spk_id)
 
-        if 'original' in context_signatures:
+        utterances: list[ProcessedUtterance] = []
 
-            context_path = os.path.join(contexts_path, 'original')
+        for utt_dir in (paragraph_dir / 'utterances').iterdir():
 
-            with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
-                metadata = json.load(f)
+            with open(utt_dir / 'raw_utterance.json', encoding='utf-8') as f:
+                raw_utt_info = raw_libri_dir_handler.UtteranceInfo.model_validate(json.load(f))
 
-            contexts.append(UtteranceContextInfo(
-                is_original=True,
-                utterance_pos=get_sentence_pos_type(utt_id, metadata['length'] - utt_id - 1),
-                token_embeddings_path=os.path.join(context_path, 'single_embeddings.pt'),
-                pse_path=os.path.join(context_path, 'paired_embeddings.pt'),
-                metadata=metadata
-            ))
-
-        for context_signature in context_signatures:
-
-            if context_signature.startswith(f'enriched_{utt_id}_'):
-
-                context_path = os.path.join(contexts_path, context_signature)
-
-                with open(os.path.join(context_path, 'metadata.json'), encoding='utf-8') as f:
-                    metadata = json.load(f)
-
-                contexts.append(UtteranceContextInfo(
-                    is_original=False,
-                    utterance_pos=get_sentence_pos_type(
-                        metadata['n_preceding_sentences'],
-                        metadata['n_following_sentences']
-                    ),
-                    token_embeddings_path=os.path.join(context_path, 'single_embeddings.pt'),
-                    pse_path=os.path.join(context_path, 'paired_embeddings.pt'),
-                    metadata=metadata
+            utterances.append(
+                ProcessedUtterance(
+                    raw_utterance=raw_utt_info,
+                    normalized_text_path=utt_dir / 'normalized_text.txt',
+                    spec_pth=utt_dir / 'spec.pt',
+                    f0_pth=utt_dir / 'f0.pt',
+                    energy_pth=utt_dir / 'energy.pt',
+                    durations_pth=utt_dir / 'durations.pt',
+                    ling_stats_pth=utt_dir / 'ling_stats.pt',
+                    pos_tags_pth=utt_dir / 'pos_tags.pt',
+                    bert_to_word_pool_matrix_pth=utt_dir / 'bert_to_word_pool_matrix.pt',
+                    phone_to_spec_indices_pth=utt_dir / 'phone_to_spec_indices.pt',
+                    spec_to_word_pool_matrix_pth=utt_dir / 'spec_to_word_pool_matrix.pt',
+                    word_to_phoneme_indices_pth=utt_dir / 'word_to_phoneme_indices.pt',
+                    utterance_pos=SentencePosType.from_utt_id(raw_utt_info.utt_id,
+                                                              len(raw_paragraph.utterances))
                 ))
 
-        for context in contexts:
-            if not os.path.exists(context.token_embeddings_path):
-                _logger().critical('Path %s does not exist!', context.token_embeddings_path)
-                sys.exit(1)
+        return ProcessedParagraph(
+            raw_paragraph=raw_paragraph,
+            speaker_info=speaker_info,
+            utterances=utterances,
+            token_embeddings_path=paragraph_dir / 'token_embeddings.pt',
+            pse_path=paragraph_dir / 'pse.pt'
+        )
 
-            if not os.path.exists(context.pse_path):
-                _logger().critical('Path %s does not exist!', context.pse_path)
-                sys.exit(1)
+    def _iter_speakers(self) -> Iterator[int]:
+        """Iterates over all speaker IDs in the dataset."""
 
-        return contexts
+        for spk_dir in self._speakers_path.iterdir():
 
-    def _obtain_utterance_data_info(self, input_data_path: str) -> UtteranceDataInfo:
-
-        paths = {
-            'bert_embeddings_pth': os.path.join(input_data_path, 'bert_embeddings.pt'),
-            'phoneme_ids_pth': os.path.join(input_data_path, 'phoneme_ids.pt'),
-
-            'spec_pth': os.path.join(input_data_path, 'spec.pt'),
-            'f0_pth': os.path.join(input_data_path, 'f0.pt'),
-            'energy_pth': os.path.join(input_data_path, 'energy.pt'),
-
-            'ling_stats_pth': os.path.join(input_data_path, 'ling_stats.pt'),
-            'pos_tags_pth': os.path.join(input_data_path, 'pos_tags.pt'),
-
-            'bert_to_word_pool_matrix_pth': os.path.join(input_data_path,
-                                                         'bert_to_word_pool_matrix.pt'),
-            'phone_to_spec_indices_pth': os.path.join(input_data_path,
-                                                      'phone_to_spec_indices.pt'),
-            'spec_to_word_pool_matrix_pth': os.path.join(input_data_path,
-                                                         'spec_to_word_pool_matrix.pt'),
-            'word_to_phoneme_indices_pth': os.path.join(input_data_path,
-                                                        'word_to_phoneme_indices.pt'),
-            'durations_pth': os.path.join(input_data_path, 'explicit_durations.pt')
-        }
-
-        for path in paths.values():
-            if not os.path.exists(path):
-                _logger().critical('Path %s does not exist!', path)
-                sys.exit(1)
-
-        return UtteranceDataInfo(**paths)
+            yield int(spk_dir.name)
