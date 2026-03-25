@@ -180,6 +180,8 @@ class RawEDA:
                 col,
                 output_dir / 'only_outliers')
 
+        self._save_example_paragraphs(per_paragraph_stats, output_dir / 'example_paragraphs')
+
     def _save_per_speaker_distributions(self,
                                         per_speaker_stats: pd.DataFrame,
                                         output_dir: pathlib.Path) -> None:
@@ -262,6 +264,35 @@ class RawEDA:
 
         fig.subplots_adjust(top=.95)
         fig.savefig(output_dir.joinpath(f'{column}.svg'))
+
+    def _save_example_paragraphs(self,
+                                 per_paragraph_stats_df: pd.DataFrame,
+                                 output_dir: pathlib.Path) -> None:
+        """Saves example paragraphs with different characteristics."""
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        path_to_para_data: dict[str, tuple[int, ...]] = {}
+
+        for stat in ['Num. utterances', 'Num. words', 'Length (sec)']:
+
+            max_paras = per_paragraph_stats_df.nlargest(10, stat)
+            min_paras = per_paragraph_stats_df.nsmallest(10, stat)
+
+            for i, ((spk_id, chap_id, para_id), _) in enumerate(max_paras.iterrows()):
+                path_to_para_data[output_dir.joinpath(f'{stat}_max_{i}/')] = (
+                    int(spk_id), int(chap_id), int(para_id)
+                )
+
+            for i, ((spk_id, chap_id, para_id), _) in enumerate(min_paras.iterrows()):
+                path_to_para_data[output_dir.joinpath(f'{stat}_min_{i}/')] = (
+                    int(spk_id), int(chap_id), int(para_id)
+                )
+
+        for path, (spk_id, chap_id, para_id) in path_to_para_data.items():
+            para_info = self._raw_path_handler.get_paragraph(spk_id, chap_id, para_id)
+
+            eda_utils.save_example_paragraph(para_info, path)
 
     def _get_utterances_df(self) -> Iterator[dict[str, Any]]:
         """Returns a DataFrame with utterance-level data."""

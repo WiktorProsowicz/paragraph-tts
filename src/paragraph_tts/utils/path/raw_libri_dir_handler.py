@@ -5,6 +5,7 @@ import logging
 from collections import defaultdict
 import pathlib
 import os
+import sys
 from typing import Iterator
 
 
@@ -135,6 +136,18 @@ class RawLibriDirHandler:
                         utt_info.wav_path = pathlib.Path(wav_path)
 
                 yield para_info
+
+    def get_paragraph(self, spk_id: int, chap_id: int, para_id: int) -> ParagraphInfo:
+        """Returns a specific paragraph by speaker, chapter, and paragraph ID."""
+
+        for para_info in self.iter_paragraphs(spk_id):
+
+            if para_info.chap_id == chap_id and para_info.para_id == para_id:
+                return para_info
+
+        _logger().critical('Paragraph not found: spk_id=%d, chap_id=%d, para_id=%d',
+                           spk_id, chap_id, para_id)
+        sys.exit(1)
 
     def _get_paragraph_drafts(self,
                               spk_id: int,
