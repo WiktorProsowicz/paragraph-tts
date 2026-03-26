@@ -5,8 +5,11 @@ import logging
 import os
 from typing import Any
 from typing import Annotated
+from typing import Iterator
+import pickle
 import pathlib
 import tqdm
+
 
 import numpy as np
 import torch
@@ -18,13 +21,11 @@ from torch_dev_utils.text_preprocessing import embeddings
 from torch_dev_utils.tts import alignment_prep
 from torch_dev_utils.tts import text_prep
 
-from paragraph_tts.data import librittsr_helpers
 from paragraph_tts.data.preprocessing import audio as audio_prep
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path import alignments_dir_handler
-from paragraph_tts.utils.path.enriched_context_dir_handler import ContextForUtterance
-from paragraph_tts.utils.path.enriched_context_dir_handler import EnrichedContextDirHandler
-from paragraph_tts.utils.path import raw_libri_dir_handler
+from paragraph_tts.utils.path import processed_libri_dir_handler
+from paragraph_tts.data import librittsr_helpers
 
 
 def _logger() -> logging.Logger:
@@ -42,7 +43,7 @@ class LibriTTSRProcessor:
         embedders_device: Annotated[str, Field(description='Device to run embedders on.')]
 
         n_words_boundaries: Annotated[tuple[int, int] | None, Field(
-            description=('Minimum and maximum number of words an utterance should contain'
+            description=('Minimum and maximum number of words a paragraph should contain'
                          ' to be included. If None, no filtering by word count is performed.')
         )]
 
@@ -56,7 +57,7 @@ class LibriTTSRProcessor:
                          ' If None, no filtering by utterance count is performed.')
         )]
 
-        ber_embedder_model: Annotated[str, Field(description='Model name for BERT embedder.')]
+        bert_embedder_model: Annotated[str, Field(description='Model name for BERT embedder.')]
 
         audio_processor_cfg: Annotated[audio_prep.AudioProcessor.Configuration, Field(
             description='Configuration of the audio processor.'
@@ -66,8 +67,8 @@ class LibriTTSRProcessor:
 
         self._spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(cfg.embedders_device)
         self._audio_processor = audio_prep.AudioProcessor(cfg.audio_processor_cfg)
-        self._text_processor = text_prep.TextProcessor(cfg.ber_embedder_model)
-        self._embedder = embeddings.BERTEmbedder('microsoft/deberta-v2-xxlarge',
+        self._text_processor = text_prep.TextProcessor(cfg.bert_embedder_model)
+        self._embedder = embeddings.BERTEmbedder(pretrained_model_name=cfg.bert_embedder_model,
                                                  device=cfg.embedders_device,
                                                  batch_size=16)
 
@@ -77,334 +78,244 @@ class LibriTTSRProcessor:
                         raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler,
                         alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
                         output_dir: pathlib.Path,
-                        metadata_output_path: pathlib.Path) -> None:
+                        metadata_output_dir: pathlib.Path) -> None:
         """Runs preprocessing on the dataset."""
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        paragraph_drafts = self._prepare_paragraph_drafts(raw_ds_handler,
-                                                          alignments_handler,
-                                                          output_dir)
-
         for speaker_id in tqdm.tqdm(raw_ds_handler.iter_speakers(),
-                                    desc='Processing speakers',
+                                    desc='Preparing paragraph drafts for speakers',
                                     unit='speaker'):
 
             for para_info in tqdm.tqdm(raw_ds_handler.iter_paragraphs(speaker_id),
-                                       desc=f'Processing paragraphs of speaker {speaker_id}',
+                                       desc=f'Preparing paragraph drafts of speaker {speaker_id}',
                                        unit='paragraph',
                                        leave=False):
 
-                _logger().debug('Processing paragraph %d of speaker %d',
+                _logger().debug('Preparing paragraph draft %d_%d of speaker %d',
+                                para_info.chap_id,
                                 para_info.para_id,
                                 speaker_id)
 
-                self._process_paragraph(para_info, raw_ds_handler, alignments_handler, output_dir)
+                self._prepare_paragraph_draft(para_info,
+                                              alignments_handler,
+                                              output_dir)
 
-    # def run_for_speaker(self, speaker_id: int) -> None:
-    #     """Runs preprocessing of samples for given speaker."""
+        processed_ds_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(output_dir)
 
-    #     for chap_id in self._raw_path_handler.iter_chapters(speaker_id):
-    #         for para_info in self._raw_path_handler.iter_paragraphs(speaker_id, chap_id):
+        for utterance in tqdm.tqdm(processed_ds_handler.iter_utterances(),
+                                   desc='Preparing data for utterances',
+                                   unit='utterance'):
 
-    #             _logger().debug('Processing paragraph %d of speaker %d',
-    #                             para_info.para_id,
-    #                             speaker_id)
+            _logger().debug('Preparing data for utterance %d of paragraph %d of speaker %d',
+                            utterance.raw_utterance.utt_id,
+                            utterance.raw_utterance.para_id,
+                            utterance.raw_utterance.spk_id)
 
-    #             self._process_paragraph(para_info)
+            self._prepare_data_for_utterance(utterance)
 
-    #     if os.path.exists(os.path.join(self._output_path, 'samples', str(speaker_id))):
-    #         _logger().debug('Normalizing f0 and energy contours for spk %d', speaker_id)
+    def _prepare_paragraph_draft(self,
+                                 paragraph_info: raw_libri_dir_handler.ParagraphInfo,
+                                 alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
+                                 output_dir: pathlib.Path):
+        """Prepares a paragraph for processing.
 
-    #         self._save_normalization_stats_for_speaker(speaker_id)
+        The paragraph is validated and all its valid utterances are prepared in their respective
+        directories. If the paragraph does not meet the filtering criteria or if none of its
+        utterances could be prepared successfully, the paragraph is not included in the processed
+        dataset.
+        """
 
-    #         if self._multi_speaker:
-    #             _logger().debug('Preparing speaker embedding for spk %d', speaker_id)
-    #             os.makedirs(os.path.join(self._output_path,
-    #                         'spk_embeddings'), exist_ok=True)
-    #             self._prepare_spk_embedding(speaker_id)
+        processed_ds_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(output_dir)
 
-    # def save_metadata(self, metadata: Dict[str, Any]) -> None:
-    #     """Saves dataset metadata to output path."""
+        if not self._should_process_paragraph(paragraph_info):
+            _logger().debug('Paragraph %s does not meet filtering criteria, skipping.',
+                            paragraph_info)
+            return
 
-    #     with open(os.path.join(self._output_path, 'metadata.json'), 'w', encoding='utf-8') as f:
-    #         json.dump(metadata, f, indent=4)
+        processed_paragraph = processed_ds_handler.create_new_paragraph(
+            paragraph_info,
+            list(filter(self._should_process_utterance, paragraph_info.utterances))
+        )
 
-    # def _process_paragraph(self, para_info: raw_libri_dir_handler.ParagraphInfo) -> None:
+        has_any_utterances_to_process = False
 
-    #     dst_dir = os.path.join(self._output_path,
-    #                            'samples',
-    #                            str(para_info.spk_id),
-    #                            f'{para_info.chap_id}_{para_info.para_id}')
+        for utterance in processed_paragraph.utterances:
 
-    #     utterances_to_process = list(
-    #         filter(self._should_process_utterance, para_info.utterances))
+            if not utterance.normalized_text_path.exists():
+                if not self._prepare_utterance_draft(utterance, alignments_handler):
+                    processed_ds_handler.delete_utterance(utterance)
+
+                else:
+                    has_any_utterances_to_process = True
+
+            else:
+                has_any_utterances_to_process = True
+
+        if not has_any_utterances_to_process:
+            _logger().debug('No utterances processed for %s, skipping.',
+                            paragraph_info)
+            processed_ds_handler.delete_paragraph(processed_paragraph)
+            return
+
+        self._prepare_context_data(processed_paragraph)
+
+    def _prepare_utterance_draft(self,
+                                 utt_info: processed_libri_dir_handler.ProcessedUtterance,
+                                 alignments_handler: alignments_dir_handler.AlignmentsDirHandler
+                                 ) -> bool:
+        """Prepares an utterance for processing. Returns True if preparation was successful."""
+
+        text_features = self._text_processor.tokenize_text(utt_info.raw_utterance.normalized_text)
+
+        if not alignments_handler.has_alignment_for(utt_info.raw_utterance):
+            _logger().debug('No alignment found for utterance %s, skipping.',
+                            utt_info.raw_utterance)
+            return False
+
+        alignments = alignments_handler.get_alignment_for(utt_info.raw_utterance)
+        word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(alignments,
+                                                                           trim_silences=True)
+
+        if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
+            _logger().debug('Alignment and text processor word counts do not match for utt %s, '
+                            'skipping', utt_info.raw_utterance)
+            return False
+
+        text_prep.add_pauses(text_features, alignment_prep.get_pauses(word_phoneme_int_mapping))
+
+        with open(utt_info.text_features_path, 'wb') as f:
+            pickle.dump(text_features, f)
 
-    #     if not utterances_to_process:
-    #         _logger().debug('No utterances to process for paragraph %s, skipping.', str(para_info))
-    #         return
+        with open(utt_info.word_phone_interval_mapping_path, 'wb') as f:
+            pickle.dump(word_phoneme_int_mapping, f)
 
-    #     original_paragraph = self._raw_path_handler.get_original_paragraph(
-    #         para_info)
+        return True
 
-    #     if original_paragraph is None or (
-    #             not self._should_process_context(list(original_paragraph.sentences.values()))):
+    def _prepare_data_for_utterance(self,
+                                    utt_info: processed_libri_dir_handler.ProcessedUtterance
+                                    ) -> None:
+        """Prepares all data for a single utterance after its has been created."""
 
-    #         if self._enriched_contexts_path_hand is None:
-    #             _logger().debug('Skipping paragraph with missing/invalid original context: %s',
-    #                             str(para_info))
-    #             return
+        with open(utt_info.text_features_path, 'rb') as f:
+            text_features: text_prep.TextFeatures = pickle.load(f)
+
+        with open(utt_info.word_phone_interval_mapping_path, 'rb') as f:
+            word_phoneme_int_mapping: alignment_prep.WordPhonemeMapping = pickle.load(f)
+
+        phoneme_ids = self._text_processor.obtain_phoneme_ids(
+            text_features.get_phoneme_sequence())
 
-    #         utts_with_enriched_context = [
-    #             utt_info
-    #             for utt_info in utterances_to_process
-    #             if self._exists_valid_enriched_context_for(utt_info)
-    #         ]
+        bert_embeddings = self._embedder.obtain_bert_embeddings(
+            text_features.get_bert_token_sequence()).clone().to(torch.float16)
 
-    #         if not utts_with_enriched_context:
-    #             _logger().debug('Skipping paragraph with neither original nor enriched context: %s',
-    #                             str(para_info))
-    #             return
+        bert_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
+            text_features.get_word_to_token_spans()
+        )
+        word_to_phoneme_indices = alignment_prep.spans_to_indices_of_smaller_seq(
+            text_features.get_word_to_phoneme_spans()
+        )
+        ling_stats = text_prep.obtain_ling_stats(text_features)
+        pos_tags = self._text_processor.obtain_pos_tags(text_features)
 
-    #         context_embeddings_dir = os.path.join(
-    #             dst_dir, 'context_embeddings')
-    #         os.makedirs(context_embeddings_dir, exist_ok=True)
+        wav = self._audio_processor.load_wav(utt_info.raw_utterance.wav_path)
+        spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
 
-    #         utterances_to_process = utts_with_enriched_context
+        spec_phone_spans = alignment_prep.get_phone_to_spec_spans(
+            word_phoneme_int_mapping,
+            text_features.word_phoneme_mapping,
+            spec.shape[1])
 
-    #     else:
-    #         context_embeddings_dir = os.path.join(
-    #             dst_dir, 'context_embeddings')
-    #         os.makedirs(context_embeddings_dir, exist_ok=True)
+        phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
+            spec_phone_spans
+        )
+        spec_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
+            alignment_prep.get_word_to_spec_spans(word_phoneme_int_mapping,
+                                                  spec.shape[1])
+        )
 
-    #         _logger().debug('Preparing context embeddings for original paragraph %s',
-    #                         original_paragraph)
+        with open(utt_info.normalized_text_path, 'w', encoding='utf-8') as f:
+            f.write(utt_info.raw_utterance.normalized_text)
 
-    #         self._prepare_context_embeddings(list(original_paragraph.sentences.values()),
-    #                                          os.path.join(context_embeddings_dir, 'original'))
+        torch.save(spec, utt_info.spec_pth)
+        torch.save(phoneme_ids, utt_info.phoneme_ids_path)
+        torch.save(bert_embeddings, utt_info.bert_embeddings_path)
+        torch.save(f0, utt_info.f0_pth)
+        torch.save(energy, utt_info.energy_pth)
+        torch.save(spec_phone_spans, utt_info.durations_pth)
+        torch.save(ling_stats, utt_info.ling_stats_pth)
+        torch.save(pos_tags, utt_info.pos_tags_pth)
+        torch.save(bert_to_word_pool_matrix, utt_info.bert_to_word_pool_matrix_pth)
+        torch.save(phone_to_spec_indices, utt_info.phone_to_spec_indices_pth)
+        torch.save(spec_to_word_pool_matrix, utt_info.spec_to_word_pool_matrix_pth)
+        torch.save(word_to_phoneme_indices, utt_info.word_to_phoneme_indices_pth)
 
-    #         paragraph_metadata = {
-    #             'length': len(original_paragraph.sentences),
-    #             'sentences': original_paragraph.sentences
-    #         }
+    def _prepare_context_data(self,
+                              processed_paragraph: processed_libri_dir_handler.ProcessedParagraph
+                              ) -> None:
 
-    #         with open(os.path.join(context_embeddings_dir, 'original', 'metadata.json'),
-    #                   'w', encoding='utf-8') as f:
-    #             json.dump(paragraph_metadata, f, indent=4)
+        if processed_paragraph.token_embeddings_path.exists():
+            _logger().debug('Context embeddings for %s already exist, skipping.',
+                            processed_paragraph.raw_paragraph)
+            return
 
-    #     _logger().debug('Out of %d utterances in paragraph %s, processing %d',
-    #                     len(para_info.utterances),
-    #                     str(para_info),
-    #                     len(utterances_to_process))
+        context_sentences = [utt.raw_utterance.normalized_text
+                             for utt in processed_paragraph.utterances]
 
-    #     for utt_info in utterances_to_process:
+        single_embeddings = self._embedder.obtain_bert_embeddings_for_sentences(context_sentences)
 
-    #         _logger().debug('Processing utterance %s', utt_info)
-    #         self._process_utterance(utt_info, dst_dir, context_embeddings_dir)
+        if len(context_sentences) > 1:
+            paired_embeddings = self._embedder.obtain_paired_bert_embeddings(
+                context_sentences
+            )
 
-    # def _should_process_utterance(self, utt_info: raw_libri_dir_handler.UtteranceInfo) -> bool:
+        else:
+            paired_embeddings = []
 
-    #     if not self._alignments_path_hand.has_alignment_for(utt_info):
-    #         return False
+        torch.save([t.clone().to(torch.float16) for t in single_embeddings],
+                   processed_paragraph.token_embeddings_path)
 
-    #     text = self._text_processor.load_text(utt_info.text_path)
-    #     text = self._text_processor.clean_text(text)
+        torch.save([t.clone().to(torch.float16) for t in paired_embeddings],
+                   processed_paragraph.pse_path)
 
-    #     n_words = len(text.split())
+    def _should_process_paragraph(self,
+                                  paragraph_info: raw_libri_dir_handler.ParagraphInfo) -> bool:
+        """Tells if the given paragraph should be processed based on the filtering criteria."""
 
-    #     if (n_words < self._filter_cfg.min_words_in_utterance or
-    #             n_words > self._filter_cfg.max_words_in_utterance):
-    #         return False
+        if self._cfg.n_utterances_boundaries is not None:
 
-    #     if not self._filter_cfg.allow_fragmented_sentences:
-    #         if not librittsr_helpers.is_sentence_whole(text):
-    #             return False
+            min_utt, max_utt = self._cfg.n_utterances_boundaries
 
-    #     dur = self._audio_processor.length_in_sec_of_file(utt_info.wav_path)
+            if not min_utt <= len(paragraph_info.utterances) <= max_utt:
+                return False
 
-    #     if (dur < self._filter_cfg.min_utterance_duration or
-    #             dur > self._filter_cfg.max_utterance_duration):
-    #         return False
+        if self._cfg.n_words_boundaries is not None:
 
-    #     return True
+            min_words, max_words = self._cfg.n_words_boundaries
+            total_words = sum(librittsr_helpers.count_words_in_text(utt.normalized_text)
+                              for utt in paragraph_info.utterances)
 
-    # def _should_process_context(self, context: List[str]) -> bool:
+            if not min_words <= total_words <= max_words:
+                return False
 
-    #     if len(context) > self._filter_cfg.max_paragraph_length:
-    #         return False
+        return True
 
-    #     if len(context) < self._filter_cfg.min_paragraph_length:
-    #         return False
+    def _should_process_utterance(self,
+                                  utterance_info: raw_libri_dir_handler.UtteranceInfo) -> bool:
+        """Tells if the given utterance should be processed based on the filtering criteria."""
 
-    #     clean_context = [self._text_processor.clean_text(
-    #         sent) for sent in context]
-    #     word_count = sum(len(sent.split()) for sent in clean_context)
+        if utterance_info.wav_path is None:
+            return False
 
-    #     if word_count > self._filter_cfg.max_words_in_context:
-    #         return False
+        if self._cfg.duration_boundaries is not None:
 
-    #     if word_count < self._filter_cfg.min_words_in_context:
-    #         return False
+            min_dur, max_dur = self._cfg.duration_boundaries
+            dur = audio_prep.length_in_sec_of_file(utterance_info.wav_path)
 
-    #     return True
+            if not min_dur <= dur <= max_dur:
+                return False
 
-    # def _exists_valid_enriched_context_for(self,
-    #                                        utterance: raw_libri_dir_handler.UtteranceInfo) -> bool:
-
-    #     if self._enriched_contexts_path_hand is None:
-    #         return False
-
-    #     if not self._enriched_contexts_path_hand.contains_contexts_for(utterance):
-    #         return False
-
-    #     contexts = self._enriched_contexts_path_hand.get_contexts_for(
-    #         utterance)
-
-    #     for context in contexts:
-    #         if self._should_process_context(context.as_paragraph()):
-    #             return True
-
-    #     return False
-
-    # def _process_utterance(self,
-    #                        utt_info: raw_libri_dir_handler.UtteranceInfo,
-    #                        dst_dir: str,
-    #                        context_embeddings_dir: str) -> None:
-
-    #     if not self._alignments_path_hand.has_alignment_for(utt_info):
-    #         _logger().debug('No alignment found for utterance %s, skipping.',
-    #                         utt_info)
-    #         return
-
-    #     inputs_path = os.path.join(dst_dir, 'input_data', str(utt_info.utt_id))
-
-    #     if not self._prepare_input_for_utterance(utt_info, inputs_path):
-    #         return
-
-    #     if self._enriched_contexts_path_hand:
-
-    #         if not self._enriched_contexts_path_hand.contains_contexts_for(utt_info):
-    #             return
-
-    #         contexts = self._enriched_contexts_path_hand.get_contexts_for(
-    #             utt_info)
-
-    #         for context_idx, context in enumerate(contexts):
-
-    #             if not self._should_process_context(context.as_paragraph()):
-    #                 continue
-
-    #             _logger().debug('Preparing embeddings for enriched context %s for utt %s',
-    #                             context.as_paragraph(),
-    #                             utt_info)
-
-    #             self._prepare_context_embeddings(
-    #                 context.as_paragraph(),
-    #                 os.path.join(context_embeddings_dir,
-    #                              f'enriched_{utt_info.utt_id}_{context_idx}')
-    #             )
-
-    #             self._save_enriched_context_metadata(
-    #                 context,
-    #                 os.path.join(context_embeddings_dir,
-    #                              f'enriched_{utt_info.utt_id}_{context_idx}')
-    #             )
-
-    # def _save_enriched_context_metadata(self,
-    #                                     context: ContextForUtterance,
-    #                                     output_dir: str) -> None:
-    #     metadata = {
-    #         'n_preceding_sentences': len(context.preceding_sentences),
-    #         'n_following_sentences': len(context.following_sentences),
-    #         'sentences': context.as_paragraph()
-    #     }
-
-    #     with open(os.path.join(output_dir, 'metadata.json'), 'w', encoding='utf-8') as f:
-    #         json.dump(metadata, f, indent=4)
-
-    # def _prepare_input_for_utterance(self,
-    #                                  utt_info: raw_libri_dir_handler.UtteranceInfo,
-    #                                  inputs_path: str) -> bool:
-
-    #     if os.path.exists(inputs_path):
-    #         _logger().debug('Input data for utterance %s already exists, skipping.',
-    #                         utt_info)
-    #         return False
-
-    #     text = self._text_processor.load_text(utt_info.text_path)
-    #     text_features = self._text_processor.tokenize_text(text)
-
-    #     alignments = self._alignments_path_hand.get_alignment_for(utt_info)
-    #     word_phoneme_int_mapping = alignment_prep.get_word_phoneme_mapping(
-    #         alignments, trim_silences=True)
-
-    #     if len(word_phoneme_int_mapping) != len(text_features.word_phoneme_mapping):
-    #         _logger().debug('Alignment and text processor word counts do not match for utt %s, '
-    #                         'skipping', utt_info)
-    #         return False
-
-    #     pauses = alignment_prep.get_pauses(word_phoneme_int_mapping)
-    #     text_prep.add_pauses(text_features, pauses)
-
-    #     phoneme_ids = self._text_processor.obtain_phoneme_ids(
-    #         text_features.get_phoneme_sequence())
-    #     bert_embeddings = self._embedder.obtain_bert_embeddings(
-    #         text_features.get_bert_token_sequence())
-
-    #     bert_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
-    #         text_features.get_word_to_token_spans()
-    #     )
-    #     word_to_phoneme_indices = alignment_prep.spans_to_indices_of_smaller_seq(
-    #         text_features.get_word_to_phoneme_spans()
-    #     )
-    #     ling_stats = text_prep.obtain_ling_stats(text_features)
-    #     pos_tags = self._text_processor.obtain_pos_tags(text_features)
-
-    #     wav = self._audio_processor.load_wav(utt_info.wav_path)
-    #     spec, energy, f0 = self._audio_processor.extract_spec_energy_f0(wav)
-
-    #     spec_phone_spans = alignment_prep.get_phone_to_spec_spans(
-    #         word_phoneme_int_mapping,
-    #         text_features.word_phoneme_mapping,
-    #         spec.shape[1])
-
-    #     phone_to_spec_indices = alignment_prep.spans_to_indices_of_smaller_seq(
-    #         spec_phone_spans
-    #     )
-    #     spec_to_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
-    #         alignment_prep.get_word_to_spec_spans(word_phoneme_int_mapping,
-    #                                               spec.shape[1])
-    #     )
-
-    #     os.makedirs(inputs_path)
-
-    #     for file_name, tensor in {
-    #         'phoneme_ids': torch.tensor(phoneme_ids, dtype=torch.long),
-    #         'bert_embeddings': bert_embeddings.clone().to(torch.float16),
-    #         'bert_to_word_pool_matrix': torch.tensor(bert_to_word_pool_matrix, dtype=torch.float),
-    #         'word_to_phoneme_indices': torch.tensor(word_to_phoneme_indices, dtype=torch.long),
-    #         'ling_stats': ling_stats,
-    #         'pos_tags': torch.tensor(pos_tags, dtype=torch.long),
-    #         'spec': torch.tensor(spec, dtype=torch.float),
-    #         'energy': torch.tensor(energy, dtype=torch.float),
-    #         'f0': torch.tensor(f0, dtype=torch.float),
-    #         'phone_to_spec_indices': torch.tensor(phone_to_spec_indices, dtype=torch.long),
-    #         'spec_to_word_pool_matrix': torch.tensor(spec_to_word_pool_matrix, dtype=torch.float),
-    #         'explicit_durations': torch.tensor(spec_phone_spans, dtype=torch.long)
-    #     }.items():
-    #         torch.save(tensor, os.path.join(inputs_path, f'{file_name}.pt'))
-
-    #     metadata_path = os.path.join(inputs_path, 'metadata.json')
-    #     with open(metadata_path, 'w', encoding='utf-8') as f:
-    #         json.dump({
-    #             'duration_sec': self._audio_processor.length_in_sec_of_file(utt_info.wav_path),
-    #             'original_text': text,
-    #             'bert_tokens': text_features.get_bert_token_sequence(),
-    #             'phonemes': text_features.get_phoneme_sequence(),
-    #             'words': text_features.words
-    #         }, f, indent=4, ensure_ascii=False)
-
-    #     return True
+        return True
 
     # def _save_normalization_stats_for_speaker(self, spk_id: int) -> None:
 
@@ -443,35 +354,6 @@ class LibriTTSRProcessor:
     #         'mean': torch.tensor(scaler.mean_, dtype=torch.float),
     #         'std': torch.tensor(np.sqrt(scaler.var_), dtype=torch.float)
     #     }, os.path.join(stats_path, f'{contour_file_name}_stats.pt'))
-
-    # def _prepare_context_embeddings(self,
-    #                                 context_sentences: List[str],
-    #                                 output_dir: str) -> None:
-
-    #     if os.path.exists(output_dir):
-    #         _logger().debug('Context embeddings for %s already exist, skipping.',
-    #                         context_sentences)
-    #         return
-
-    #     single_embeddings = self._embedder.obtain_bert_embeddings_for_sentences(
-    #         context_sentences
-    #     )
-
-    #     if len(context_sentences) > 1:
-    #         paired_embeddings = self._embedder.obtain_paired_bert_embeddings(
-    #             context_sentences
-    #         )
-
-    #     else:
-    #         paired_embeddings = []
-
-    #     os.makedirs(output_dir)
-
-    #     torch.save([t.clone().to(torch.float16) for t in single_embeddings],
-    #                os.path.join(output_dir, 'single_embeddings.pt'))
-
-    #     torch.save([t.clone().to(torch.float16) for t in paired_embeddings],
-    #                os.path.join(output_dir, 'paired_embeddings.pt'))
 
     # def _prepare_spk_embedding(self, speaker_id: int) -> None:
 

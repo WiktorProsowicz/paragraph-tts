@@ -1,15 +1,12 @@
 """Contains utils for handling paths in processed LibriTTS-R dataset."""
-import dataclasses
+
 import enum
 import json
 import logging
 import os
 import pathlib
-import sys
 from typing import Any
-from typing import Dict
 from typing import Iterator
-from typing import List
 
 import pydantic
 
@@ -30,6 +27,7 @@ class SentencePosType(enum.Enum):
 
     @staticmethod
     def from_utt_id(utt_id: int, n_utterances_in_paragraph: int) -> 'SentencePosType':
+        """Infers the sentence type based on its position in the paragraph."""
 
         if n_utterances_in_paragraph == 1:
             return SentencePosType.ONLY
@@ -47,10 +45,13 @@ class ProcessedUtterance(pydantic.BaseModel):
     """Represents an utterance in the processed dataset."""
 
     raw_utterance: raw_libri_dir_handler.UtteranceInfo
-
+    text_features_path: pathlib.Path
+    word_phone_interval_mapping_path: pathlib.Path
     normalized_text_path: pathlib.Path
 
     spec_pth: pathlib.Path
+    phoneme_ids_path: pathlib.Path
+    bert_embeddings_path: pathlib.Path
     f0_pth: pathlib.Path
     energy_pth: pathlib.Path
     durations_pth: pathlib.Path
@@ -100,14 +101,10 @@ class ProcessedLibriDirHandler:
         self._root_path = ds_path
         self._speakers_path = ds_path / 'speakers'
 
-    def get_metadata(self) -> Dict[str, Any]:
-        """Returns processed dataset's metadata."""
-
-        with open(self._metadata_path, encoding='utf-8') as f:
-            return json.load(f)  # type: ignore[no-any-return]
-
     def create_new_paragraph(self,
-                             raw_paragraph: raw_libri_dir_handler.ParagraphInfo) -> ProcessedParagraph:
+                             raw_paragraph: raw_libri_dir_handler.ParagraphInfo,
+                             utterances: list[raw_libri_dir_handler.UtteranceInfo]
+                             ) -> ProcessedParagraph:
         """Initializes a new paragraph in the processed dataset based on the raw paragraph."""
 
         paragraphs_dir = self._speakers_path / str(raw_paragraph.spk_id) / 'paragraphs'
@@ -121,15 +118,53 @@ class ProcessedLibriDirHandler:
         utterances_dir = paragraph_dir / 'utterances'
         utterances_dir.mkdir(parents=True, exist_ok=True)
 
-        for utt_info in raw_paragraph.utterances:
+        for utt_info in utterances:
 
             utterance_dir = utterances_dir / str(utt_info.utt_id)
             utterance_dir.mkdir(parents=True, exist_ok=True)
 
-            with open(utterance_dir / f'raw_utterance.json', 'w', encoding='utf-8') as f:
+            with open(utterance_dir / 'raw_utterance.json', 'w', encoding='utf-8') as f:
                 json.dump(utt_info.model_dump(), f, ensure_ascii=False, indent=4)
 
         return self._obtain_paragraph(paragraph_dir)
+
+    def delete_paragraph(self, paragraph: ProcessedParagraph) -> None:
+        """Deletes the given paragraph from the processed dataset."""
+
+        paragraph_dir = (
+            self._speakers_path
+            .joinpath(str(paragraph.speaker_info.spk_id))
+            .joinpath('paragraphs')
+            .joinpath(f'{paragraph.raw_paragraph.chap_id}_{paragraph.raw_paragraph.para_id}')
+        )
+
+        for item in paragraph_dir.rglob('*'):
+            if item.is_file():
+                item.unlink()
+            else:
+                item.rmdir()
+
+        paragraph_dir.rmdir()
+
+    def delete_utterance(self, utterance: ProcessedUtterance) -> None:
+        """Deletes the given utterance from the processed dataset."""
+
+        utterance_dir = (
+            self._speakers_path
+            .joinpath(str(utterance.raw_utterance.spk_id))
+            .joinpath('paragraphs')
+            .joinpath(f'{utterance.raw_utterance.chap_id}_{utterance.raw_utterance.para_id}')
+            .joinpath('utterances')
+            .joinpath(str(utterance.raw_utterance.utt_id))
+        )
+
+        for item in utterance_dir.rglob('*'):
+            if item.is_file():
+                item.unlink()
+            else:
+                item.rmdir()
+
+        utterance_dir.rmdir()
 
     def iter_utterances(self) -> Iterator[ProcessedUtterance]:
         """Iterates over all utterances in the dataset."""
@@ -180,6 +215,10 @@ class ProcessedLibriDirHandler:
             utterances.append(
                 ProcessedUtterance(
                     raw_utterance=raw_utt_info,
+                    text_features_path=utt_dir / 'text_features.pkl',
+                    word_phone_interval_mapping_path=utt_dir / 'word_phone_interval_mapping.pkl',
+                    phoneme_ids_path=utt_dir / 'phoneme_ids.pt',
+                    bert_embeddings_path=utt_dir / 'bert_embeddings.pt',
                     normalized_text_path=utt_dir / 'normalized_text.txt',
                     spec_pth=utt_dir / 'spec.pt',
                     f0_pth=utt_dir / 'f0.pt',

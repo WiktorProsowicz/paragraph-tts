@@ -32,7 +32,7 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
 
     ds_processor = processor.LibriTTSRProcessor(
         processor.LibriTTSRProcessor.Configuration.model_validate(
-            omegaconf.OmegaConf.to_container(script_cfg.processor_config)
+            omegaconf.OmegaConf.to_container(script_cfg.processor_cfg)
         )
     )
 

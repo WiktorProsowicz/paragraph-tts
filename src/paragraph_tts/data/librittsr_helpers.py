@@ -8,6 +8,7 @@ import pathlib
 import sys
 from typing import Dict
 from typing import Tuple
+import re
 
 _THIS_MODULE_DIR = pathlib.Path(__file__).parent
 _BOOKS_PATH = os.path.join(_THIS_MODULE_DIR, 'res', 'books.csv')
@@ -117,3 +118,9 @@ def is_sentence_whole(text: str) -> bool:
     has_even_quotes = _count_left_quotes(text) == _count_right_quotes(text)
 
     return ends_as_a_whole and starts_as_a_whole and has_even_quotes
+
+
+def count_words_in_text(text: str) -> int:
+    """Counts the number of words in the given text."""
+
+    return len(re.findall(r'\b\w+\b', text))

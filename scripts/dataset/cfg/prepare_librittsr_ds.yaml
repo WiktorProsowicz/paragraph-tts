@@ -1,5 +1,5 @@
 ---
-raw_ds_path: tmp/LibriTTS_R
+raw_ds_path: tmp/LibriTTS_R_dev
 choose_splits: null
 alignments_path: data/librittsr_alignments
 output_dir: tmp/librittsr_processed
@@ -7,12 +7,12 @@ metadata_output_dir: tmp/librittsr_processing_metadata
 
 processor_cfg:
   multi_speaker: true
-  embedders_device: cuda
-  n_word_boundaries: [5, 180]
-  n_utterance_boundaries: [1, 10]
+  embedders_device: cpu
+  n_words_boundaries: [5, 180]
+  n_utterances_boundaries: [1, 10]
   duration_boundaries: [1.0, 30.0]
-  bert_embedder_model: microsoft/deberta-v3-large
-  audio_processing_cfg:
+  bert_embedder_model: google/bert_uncased_L-2_H-128_A-2
+  audio_processor_cfg:
     sr: 22050
     hop_length: 256
     win_length: 1024

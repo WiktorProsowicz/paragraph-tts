@@ -23,7 +23,7 @@ class UtteranceInfo(pydantic.BaseModel):
     chap_id: int
     para_id: int
     normalized_text: str
-    wav_path: pathlib.Path | None = None
+    wav_path: str | None = None
 
 
 class ParagraphInfo(pydantic.BaseModel):
@@ -133,7 +133,7 @@ class RawLibriDirHandler:
                     )
 
                     if os.path.exists(wav_path):
-                        utt_info.wav_path = pathlib.Path(wav_path)
+                        utt_info.wav_path = wav_path
 
                 yield para_info
 
