@@ -114,6 +114,17 @@ class LibriTTSRProcessor:
 
             self._prepare_data_for_utterance(utterance)
 
+        for speaker_info in tqdm.tqdm(processed_ds_handler.iter_speakers(),
+                                      desc='Preparing speaker embeddings and normalization stats',
+                                      unit='speaker'):
+
+            utterances = list(processed_ds_handler.iter_utterances(speaker_info.spk_id))
+
+            if self._cfg.multi_speaker:
+                self._prepare_spk_embedding(speaker_info, utterances)
+
+            self._save_normalization_stats(speaker_info, utterances)
+
     def _prepare_paragraph_draft(self,
                                  paragraph_info: raw_libri_dir_handler.ParagraphInfo,
                                  alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
@@ -142,7 +153,7 @@ class LibriTTSRProcessor:
 
         for utterance in processed_paragraph.utterances:
 
-            if not utterance.normalized_text_path.exists():
+            if not utterance.normalized_text_pth.exists():
                 if not self._prepare_utterance_draft(utterance, alignments_handler):
                     processed_ds_handler.delete_utterance(utterance)
 
@@ -184,10 +195,10 @@ class LibriTTSRProcessor:
 
         text_prep.add_pauses(text_features, alignment_prep.get_pauses(word_phoneme_int_mapping))
 
-        with open(utt_info.text_features_path, 'wb') as f:
+        with open(utt_info.text_features_pth, 'wb') as f:
             pickle.dump(text_features, f)
 
-        with open(utt_info.word_phone_interval_mapping_path, 'wb') as f:
+        with open(utt_info.word_phone_interval_mapping_pth, 'wb') as f:
             pickle.dump(word_phoneme_int_mapping, f)
 
         return True
@@ -197,10 +208,15 @@ class LibriTTSRProcessor:
                                     ) -> None:
         """Prepares all data for a single utterance after its has been created."""
 
-        with open(utt_info.text_features_path, 'rb') as f:
+        if utt_info.normalized_text_pth.exists():
+            _logger().debug('Data for utterance %s already exists, skipping.',
+                            utt_info.raw_utterance)
+            return
+
+        with open(utt_info.text_features_pth, 'rb') as f:
             text_features: text_prep.TextFeatures = pickle.load(f)
 
-        with open(utt_info.word_phone_interval_mapping_path, 'rb') as f:
+        with open(utt_info.word_phone_interval_mapping_pth, 'rb') as f:
             word_phoneme_int_mapping: alignment_prep.WordPhonemeMapping = pickle.load(f)
 
         phoneme_ids = self._text_processor.obtain_phoneme_ids(
@@ -233,22 +249,24 @@ class LibriTTSRProcessor:
             alignment_prep.get_word_to_spec_spans(word_phoneme_int_mapping,
                                                   spec.shape[1])
         )
+        spec_phone_pool_matrix = alignment_prep.spans_to_pool_matrix(spec_phone_spans)
 
-        with open(utt_info.normalized_text_path, 'w', encoding='utf-8') as f:
+        with open(utt_info.normalized_text_pth, 'w', encoding='utf-8') as f:
             f.write(utt_info.raw_utterance.normalized_text)
 
-        torch.save(spec, utt_info.spec_pth)
-        torch.save(phoneme_ids, utt_info.phoneme_ids_path)
-        torch.save(bert_embeddings, utt_info.bert_embeddings_path)
-        torch.save(f0, utt_info.f0_pth)
-        torch.save(energy, utt_info.energy_pth)
-        torch.save(spec_phone_spans, utt_info.durations_pth)
+        torch.save(torch.tensor(spec), utt_info.spec_pth)
+        torch.save(torch.tensor(phoneme_ids), utt_info.phoneme_ids_pth)
+        torch.save(bert_embeddings, utt_info.bert_embeddings_pth)
+        torch.save(torch.tensor(f0), utt_info.f0_pth)
+        torch.save(torch.tensor(energy), utt_info.energy_pth)
+        torch.save(torch.tensor(spec_phone_spans), utt_info.durations_pth)
         torch.save(ling_stats, utt_info.ling_stats_pth)
-        torch.save(pos_tags, utt_info.pos_tags_pth)
-        torch.save(bert_to_word_pool_matrix, utt_info.bert_to_word_pool_matrix_pth)
-        torch.save(phone_to_spec_indices, utt_info.phone_to_spec_indices_pth)
-        torch.save(spec_to_word_pool_matrix, utt_info.spec_to_word_pool_matrix_pth)
-        torch.save(word_to_phoneme_indices, utt_info.word_to_phoneme_indices_pth)
+        torch.save(torch.tensor(pos_tags), utt_info.pos_tags_pth)
+        torch.save(torch.tensor(bert_to_word_pool_matrix), utt_info.bert_to_word_pool_matrix_pth)
+        torch.save(torch.tensor(phone_to_spec_indices), utt_info.phone_to_spec_indices_pth)
+        torch.save(torch.tensor(spec_to_word_pool_matrix), utt_info.spec_to_word_pool_matrix_pth)
+        torch.save(torch.tensor(word_to_phoneme_indices), utt_info.word_to_phoneme_indices_pth)
+        torch.save(torch.tensor(spec_phone_pool_matrix), utt_info.spec_to_phone_pool_matrix_pth)
 
     def _prepare_context_data(self,
                               processed_paragraph: processed_libri_dir_handler.ProcessedParagraph
@@ -317,63 +335,50 @@ class LibriTTSRProcessor:
 
         return True
 
-    # def _save_normalization_stats_for_speaker(self, spk_id: int) -> None:
+    def _save_normalization_stats(self,
+                                  speaker_info: processed_libri_dir_handler.SpeakerInfo,
+                                  utterances: list[processed_libri_dir_handler.ProcessedUtterance],
+                                  ) -> None:
+        """Saves normalization stats for f0 and energy for the given utterances."""
 
-    #     self._save_norm_stats(spk_id, 'f0')
-    #     self._save_norm_stats(spk_id, 'energy')
+        f0_scaler = StandardScaler()
+        energy_scaler = StandardScaler()
 
-    # def _save_norm_stats(self,
-    #                      spk_id: int,
-    #                      contour_file_name: str) -> None:
+        for utterance in utterances:
 
-    #     speaker_path = os.path.join(self._output_path,
-    #                                 'samples',
-    #                                 str(spk_id))
+            f0 = torch.load(utterance.f0_pth, weights_only=False).numpy().reshape(-1, 1)
+            energy = torch.load(utterance.energy_pth, weights_only=False).numpy().reshape(-1, 1)
 
-    #     scaler = StandardScaler()
+            f0_scaler.partial_fit(f0)
+            energy_scaler.partial_fit(energy)
 
-    #     for para_dir in os.listdir(speaker_path):
-    #         for utt_dir in os.listdir(os.path.join(speaker_path, para_dir, 'input_data')):
+        torch.save({
+            'mean': torch.tensor(f0_scaler.mean_, dtype=torch.float),
+            'std': torch.tensor(np.sqrt(f0_scaler.var_), dtype=torch.float)
+        }, speaker_info.f0_stats_path)
 
-    #             contour_path = os.path.join(speaker_path,
-    #                                         para_dir,
-    #                                         'input_data',
-    #                                         utt_dir,
-    #                                         f'{contour_file_name}.pt')
+        torch.save({
+            'mean': torch.tensor(energy_scaler.mean_, dtype=torch.float),
+            'std': torch.tensor(np.sqrt(energy_scaler.var_), dtype=torch.float)
+        }, speaker_info.energy_stats_path)
 
-    #             contour = torch.load(contour_path).numpy().reshape(-1, 1)
-    #             scaler.partial_fit(contour)
+    def _prepare_spk_embedding(self,
+                               speaker_info: processed_libri_dir_handler.SpeakerInfo,
+                               utterances: list[processed_libri_dir_handler.ProcessedUtterance]
+                               ) -> None:
 
-    #     stats_path = os.path.join(self._output_path,
-    #                               'speaker_num_stats',
-    #                               str(spk_id))
+        if speaker_info.embedding_path.exists():
+            _logger().debug('Speaker embedding for spk %d already exist, skipping preparation.',
+                            speaker_info.spk_id)
+            return
 
-    #     os.makedirs(stats_path, exist_ok=True)
+        spk_embeddings: list[np.ndarray] = []
 
-    #     torch.save({
-    #         'mean': torch.tensor(scaler.mean_, dtype=torch.float),
-    #         'std': torch.tensor(np.sqrt(scaler.var_), dtype=torch.float)
-    #     }, os.path.join(stats_path, f'{contour_file_name}_stats.pt'))
+        for utterance_info in utterances:
+            embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
+                utterance_info.raw_utterance.wav_path)
+            spk_embeddings.append(self._spk_embedder(embedder_input)[0])
 
-    # def _prepare_spk_embedding(self, speaker_id: int) -> None:
+        final_embedding = np.mean(spk_embeddings, axis=0)
 
-    #     embedding_path = os.path.join(self._output_path,
-    #                                   'spk_embeddings',
-    #                                   f'{speaker_id}.pt')
-
-    #     if os.path.exists(embedding_path):
-    #         _logger().debug('Speaker embedding for spk %d already exist, skipping preparation.',
-    #                         speaker_id)
-    #         return
-
-    #     spk_embeddings: List[np.ndarray] = []
-
-    #     for utterance_info in self._raw_path_handler.iter_utterances_for_spk(speaker_id):
-    #         embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
-    #             utterance_info.wav_path)
-    #         spk_embeddings.append(self._spk_embedder(embedder_input)[0])
-
-    #     final_embedding = np.mean(spk_embeddings, axis=0)
-
-    #     torch.save(torch.tensor(final_embedding),
-    #                embedding_path)
+        torch.save(torch.tensor(final_embedding), speaker_info.embedding_path)

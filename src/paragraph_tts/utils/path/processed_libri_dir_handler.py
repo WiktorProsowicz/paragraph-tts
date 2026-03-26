@@ -44,14 +44,16 @@ class SentencePosType(enum.Enum):
 class ProcessedUtterance(pydantic.BaseModel):
     """Represents an utterance in the processed dataset."""
 
+    paragraph: 'ProcessedParagraph'
+
     raw_utterance: raw_libri_dir_handler.UtteranceInfo
-    text_features_path: pathlib.Path
-    word_phone_interval_mapping_path: pathlib.Path
-    normalized_text_path: pathlib.Path
+    text_features_pth: pathlib.Path
+    word_phone_interval_mapping_pth: pathlib.Path
+    normalized_text_pth: pathlib.Path
 
     spec_pth: pathlib.Path
-    phoneme_ids_path: pathlib.Path
-    bert_embeddings_path: pathlib.Path
+    phoneme_ids_pth: pathlib.Path
+    bert_embeddings_pth: pathlib.Path
     f0_pth: pathlib.Path
     energy_pth: pathlib.Path
     durations_pth: pathlib.Path
@@ -61,6 +63,7 @@ class ProcessedUtterance(pydantic.BaseModel):
 
     bert_to_word_pool_matrix_pth: pathlib.Path
     phone_to_spec_indices_pth: pathlib.Path
+    spec_to_phone_pool_matrix_pth: pathlib.Path
     spec_to_word_pool_matrix_pth: pathlib.Path
     word_to_phoneme_indices_pth: pathlib.Path
 
@@ -166,10 +169,10 @@ class ProcessedLibriDirHandler:
 
         utterance_dir.rmdir()
 
-    def iter_utterances(self) -> Iterator[ProcessedUtterance]:
+    def iter_utterances(self, speaker_id: int | None = None) -> Iterator[ProcessedUtterance]:
         """Iterates over all utterances in the dataset."""
 
-        for spk_id in self._iter_speakers():
+        for spk_id in self._iter_speakers() if speaker_id is None else [speaker_id]:
 
             spk_path = self._speakers_path / str(spk_id)
             paragraphs_path = spk_path / 'paragraphs'
@@ -178,8 +181,13 @@ class ProcessedLibriDirHandler:
 
                 paragraph = self._obtain_paragraph(paragraph_dir)
 
-                for utterance in paragraph.utterances:
-                    yield utterance
+                yield from paragraph.utterances
+
+    def iter_speakers(self) -> Iterator[SpeakerInfo]:
+        """Iterates over all speakers in the dataset."""
+
+        for spk_id in self._iter_speakers():
+            yield self._obtain_speaker_info(spk_id)
 
     def _obtain_speaker_info(self, spk_id: int) -> SpeakerInfo:
         """Initializes or retrieves speaker info for a given speaker ID."""
@@ -205,21 +213,28 @@ class ProcessedLibriDirHandler:
 
         speaker_info = self._obtain_speaker_info(raw_paragraph.spk_id)
 
-        utterances: list[ProcessedUtterance] = []
+        paragraph = ProcessedParagraph(
+            raw_paragraph=raw_paragraph,
+            speaker_info=speaker_info,
+            utterances=[],
+            token_embeddings_path=paragraph_dir / 'token_embeddings.pt',
+            pse_path=paragraph_dir / 'pse.pt'
+        )
 
         for utt_dir in (paragraph_dir / 'utterances').iterdir():
 
             with open(utt_dir / 'raw_utterance.json', encoding='utf-8') as f:
                 raw_utt_info = raw_libri_dir_handler.UtteranceInfo.model_validate(json.load(f))
 
-            utterances.append(
+            paragraph.utterances.append(
                 ProcessedUtterance(
+                    paragraph=paragraph,
                     raw_utterance=raw_utt_info,
-                    text_features_path=utt_dir / 'text_features.pkl',
-                    word_phone_interval_mapping_path=utt_dir / 'word_phone_interval_mapping.pkl',
-                    phoneme_ids_path=utt_dir / 'phoneme_ids.pt',
-                    bert_embeddings_path=utt_dir / 'bert_embeddings.pt',
-                    normalized_text_path=utt_dir / 'normalized_text.txt',
+                    text_features_pth=utt_dir / 'text_features.pkl',
+                    word_phone_interval_mapping_pth=utt_dir / 'word_phone_interval_mapping.pkl',
+                    phoneme_ids_pth=utt_dir / 'phoneme_ids.pt',
+                    bert_embeddings_pth=utt_dir / 'bert_embeddings.pt',
+                    normalized_text_pth=utt_dir / 'normalized_text.txt',
                     spec_pth=utt_dir / 'spec.pt',
                     f0_pth=utt_dir / 'f0.pt',
                     energy_pth=utt_dir / 'energy.pt',
@@ -230,17 +245,12 @@ class ProcessedLibriDirHandler:
                     phone_to_spec_indices_pth=utt_dir / 'phone_to_spec_indices.pt',
                     spec_to_word_pool_matrix_pth=utt_dir / 'spec_to_word_pool_matrix.pt',
                     word_to_phoneme_indices_pth=utt_dir / 'word_to_phoneme_indices.pt',
+                    spec_to_phone_pool_matrix_pth=utt_dir / 'spec_to_phone_pool_matrix.pt',
                     utterance_pos=SentencePosType.from_utt_id(raw_utt_info.utt_id,
                                                               len(raw_paragraph.utterances))
                 ))
 
-        return ProcessedParagraph(
-            raw_paragraph=raw_paragraph,
-            speaker_info=speaker_info,
-            utterances=utterances,
-            token_embeddings_path=paragraph_dir / 'token_embeddings.pt',
-            pse_path=paragraph_dir / 'pse.pt'
-        )
+        return paragraph
 
     def _iter_speakers(self) -> Iterator[int]:
         """Iterates over all speaker IDs in the dataset."""
