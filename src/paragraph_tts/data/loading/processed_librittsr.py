@@ -5,9 +5,12 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import Annotated
 
 import lightning.pytorch as pl
 import torch
+import pydantic
+from pydantic import Field
 
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
@@ -16,108 +19,156 @@ def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-class _DataSet(torch.utils.data.Dataset[dict[str, torch.Tensor]]):
+class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]]):
     """Loads serialized data from disk."""
 
+    class Configuration(pydantic.BaseModel):
+        """Configuration for ProcessedLibriTTSRDataset."""
+
+        load_prosody_features: Annotated[bool, Field(
+            description='Whether to load pitch and energy features.')]
+
+        pitch_quantization_params: Annotated[tuple[int, float, float] | None, Field(
+            description='Number of bins, min and max values for pitch quantization.')]
+
+        energy_quantization_params: Annotated[tuple[int, float, float] | None, Field(
+            description='Number of bins, min and max values for energy quantization.')]
+
+        scale_prosody_features: Annotated[bool, Field(
+            description='Whether to scale pitch and energy features using speaker-wise statistics.')
+        ]
+
+        use_phoneme_level_prosody_features: Annotated[bool, Field(
+            description='Whether to average frame-level pitch and energy features to phoneme-level.'
+        )]
+
+        load_context_embeddings: Annotated[bool, Field(
+            description='Whether to load context token embeddings and PSE features.')]
+
     def __init__(self,
-                 processed_dir_handler: processed_libri_dir_handler.ProcessedLibriDirHandler,
-                 samples: List[processed_libri_dir_handler.SampleInfo],
-                 n_pitch_bins: int,
-                 pitch_bounds: Tuple[float, float],
-                 n_energy_bins: int,
-                 energy_bounds: Tuple[float, float]):
+                 cfg: Configuration,
+                 utterances: list[processed_libri_dir_handler.ProcessedUtterance]):
 
-        self._samples = samples
-        self._processed_dir_handler = processed_dir_handler
-        self._n_pitch_bins = n_pitch_bins
-        self._min_pitch, self._max_pitch = pitch_bounds
-        self._n_energy_bins = n_energy_bins
-        self._min_energy, self._max_energy = energy_bounds
+        self._utterances = utterances
 
-        self._f0_possible_values = torch.linspace(
-            self._min_pitch, self._max_pitch, self._n_pitch_bins)
-        self._energy_possible_values = torch.linspace(
-            self._min_energy, self._max_energy, self._n_energy_bins)
+        if cfg.pitch_quantization_params is not None:
+            n_pitch_bins, min_pitch, max_pitch = cfg.pitch_quantization_params
+            self._f0_possible_values = torch.linspace(min_pitch, max_pitch, n_pitch_bins)
+
+        else:
+            self._f0_possible_values = None
+
+        if cfg.energy_quantization_params is not None:
+            n_energy_bins, min_energy, max_energy = cfg.energy_quantization_params
+            self._energy_possible_values = torch.linspace(min_energy, max_energy, n_energy_bins)
+        else:
+            self._energy_possible_values = None
+
+        self._cfg = cfg
 
     def __len__(self) -> int:
-        return len(self._samples)
-
-    def _scale(self,
-               values: torch.Tensor,
-               mean: torch.Tensor,
-               std: torch.Tensor) -> torch.Tensor:
-
-        return (values - mean) / std
+        return len(self._utterances)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
 
-        sample = self._samples[idx]
+        utterance = self._utterances[idx]
 
-        context = random.choice(sample.contexts)
-
-        phoneme_ids = torch.load(sample.input_data.phoneme_ids_pth)
+        phoneme_ids = torch.load(utterance.phoneme_ids_pth)
         phoneme_lengths = torch.tensor(phoneme_ids.shape[0], dtype=torch.long)
-        spec = torch.load(sample.input_data.spec_pth)
-        spec_length = torch.tensor(spec.shape[1], dtype=torch.long)
-        input_token_emb = torch.load(sample.input_data.bert_embeddings_pth).to(torch.float)
-        bert_to_word_pool_matrix = torch.load(sample.input_data.bert_to_word_pool_matrix_pth)
-
-        input_word_embeddings = torch.matmul(bert_to_word_pool_matrix.T,
-                                             input_token_emb)
-
-        speaking_rate = torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float)
-
-        context_token_emb_list = torch.load(context.token_embeddings_path)
-        context_token_emb = torch.cat(context_token_emb_list, dim=0).to(torch.float)
-        context_tokens_length = torch.tensor(context_token_emb.shape[0], dtype=torch.long)
-
-        context_token_pse_list = torch.load(context.pse_path)
-        context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
-        context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
-
-        num_stats = self._processed_dir_handler.get_numerical_stats(sample.spk_id)
-
-        f0_stats = torch.load(num_stats.f0_stats_pth)
-        mean_f0, std_f0 = f0_stats['mean'], f0_stats['std']
-        energy_stats = torch.load(num_stats.energy_stats_pth)
-        mean_energy, std_energy = energy_stats['mean'], energy_stats['std']
-
-        f0 = self._scale(
-            torch.load(sample.input_data.f0_pth),
-            mean_f0, std_f0
-        )
-
-        energy = self._scale(
-            torch.load(sample.input_data.energy_pth),
-            mean_energy, std_energy
-        )
-
-        word_to_phoneme_indices = torch.load(sample.input_data.word_to_phoneme_indices_pth)
-
-        pos_tags = torch.load(sample.input_data.pos_tags_pth)
+        word_to_phoneme_indices = torch.load(utterance.word_to_phoneme_indices_pth)
+        pos_tags = torch.load(utterance.pos_tags_pth)
         pos_tags = pos_tags[word_to_phoneme_indices]
 
+        spec = torch.load(utterance.spec_pth)
+        spec_length = torch.tensor(spec.shape[1], dtype=torch.long)
+
+        input_token_emb = torch.load(utterance.bert_embeddings_pth).to(torch.float)
+        bert_to_word_pool_matrix = torch.load(utterance.bert_to_word_pool_matrix_pth)
+        input_word_embeddings = torch.matmul(bert_to_word_pool_matrix.T, input_token_emb)
+
+        data: dict[str, torch.Tensor] = {}
+
+        if self._cfg.load_prosody_features:
+            data.update(self._load_prosody_features(utterance))
+
+        if self._cfg.load_context_embeddings:
+            data.update(self._load_context_features(utterance))
+
         return {
-            'spk_emb': torch.load(sample.spk_embedding_path),
-            'context_token_emb': context_token_emb,
-            'context_tokens_length': context_tokens_length,
-            'context_pse': context_token_pse,
-            'context_pse_length': context_pse_length,
+            'spk_emb': torch.load(utterance.paragraph.speaker_info.embedding_path),
             'input_word_emb': input_word_embeddings,
             'input_phoneme_ids': phoneme_ids,
             'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
             'input_spec_length': spec_length,
+            'input_ling_stats': torch.load(utterance.ling_stats_pth),
+            'input_pos_tags': pos_tags,
+            'phone_to_spec_indices': torch.load(utterance.phone_to_spec_indices_pth),
+            'spec_to_word_pool_matrix': torch.load(utterance.spec_to_word_pool_matrix_pth),
+            'word_to_phoneme_indices': word_to_phoneme_indices,
+            'sentence_pos': torch.tensor(utterance.utterance_pos.value, dtype=torch.long),
+            'spk_rate': torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float),
+            'explicit_durations': torch.load(utterance.durations_pth),
+            **data
+        }
+
+    def _load_prosody_features(self,
+                               sample: processed_libri_dir_handler.ProcessedUtterance
+                               ) -> dict[str, torch.Tensor]:
+
+        f0 = torch.load(sample.f0_pth)
+        energy = torch.load(sample.energy_pth)
+
+        if self._cfg.scale_prosody_features:
+
+            f0_stats = torch.load(sample.paragraph.speaker_info.f0_stats_path)
+            mean_f0, std_f0 = f0_stats['mean'], f0_stats['std']
+
+            energy_stats = torch.load(sample.paragraph.speaker_info.energy_stats_path)
+            mean_energy, std_energy = energy_stats['mean'], energy_stats['std']
+
+            f0 = (f0 - mean_f0) / std_f0
+            energy = (energy - mean_energy) / std_energy
+
+        if self._cfg.use_phoneme_level_prosody_features:
+
+            spec_to_phone_pool_matrix = torch.load(sample.spec_to_phone_pool_matrix_pth.T)
+
+            f0 = torch.matmul(spec_to_phone_pool_matrix, f0)
+            energy = torch.matmul(spec_to_phone_pool_matrix, energy)
+
+        return {
             'input_f0': f0,
             'input_energy': energy,
-            'input_ling_stats': torch.load(sample.input_data.ling_stats_pth),
-            'input_pos_tags': pos_tags,
-            'phone_to_spec_indices': torch.load(sample.input_data.phone_to_spec_indices_pth),
-            'spec_to_word_pool_matrix': torch.load(sample.input_data.spec_to_word_pool_matrix_pth),
-            'word_to_phoneme_indices': word_to_phoneme_indices,
-            'sentence_pos': torch.tensor(context.utterance_pos.value, dtype=torch.long),
-            'spk_rate': speaking_rate,
-            'explicit_durations': torch.load(sample.input_data.durations_pth),
+        }
+
+    def _load_context_features(self,
+                               sample: processed_libri_dir_handler.ProcessedUtterance
+                               ) -> dict[str, torch.Tensor]:
+
+        context_token_emb_list = torch.load(sample.paragraph.token_embeddings_path)
+
+        if context_token_emb_list:
+            context_token_emb = torch.cat(context_token_emb_list, dim=0).to(torch.float)
+            context_tokens_length = torch.tensor(context_token_emb.shape[0], dtype=torch.long)
+        else:
+            context_token_emb = torch.empty(0, dtype=torch.float)
+            context_tokens_length = torch.tensor(0, dtype=torch.long)
+
+        context_token_pse_list = torch.load(sample.paragraph.pse_path)
+
+        if context_token_pse_list:
+            context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
+            context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
+        else:
+            context_token_pse = torch.empty(0,  dtype=torch.float)
+            context_pse_length = torch.tensor(0, dtype=torch.long)
+
+        return {
+            'context_token_emb': context_token_emb,
+            'context_tokens_length': context_tokens_length,
+            'context_pse': context_token_pse,
+            'context_pse_length': context_pse_length,
         }
 
     def collate_fn(self, batch_samples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -161,90 +212,55 @@ class _DataSet(torch.utils.data.Dataset[dict[str, torch.Tensor]]):
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0)
 
-        batch['pitch_possible_values'] = self._f0_possible_values
-        batch['energy_possible_values'] = self._energy_possible_values
+        if self._f0_possible_values is not None:
+            batch['pitch_possible_values'] = self._f0_possible_values
+
+        if self._energy_possible_values is not None:
+            batch['energy_possible_values'] = self._energy_possible_values
 
         return batch
 
 
-class ProcessedLibriTTSR(pl.LightningDataModule):
+class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
     """Loads processed LibriTTS-R dataset."""
 
     def __init__(self,
-                 ds_path: str,
+                 ds_cfg: ProcessedLibriTTSRDataset.Configuration,
+                 processed_ds_handler: processed_libri_dir_handler.ProcessedLibriDirHandler,
                  batch_size: int,
                  num_workers: int,
-                 num_test_samples: int,
                  train_val_split: float,
-                 n_pitch_bins: int,
-                 pitch_bounds: Tuple[float, float],
-                 n_energy_bins: int,
-                 energy_bounds: Tuple[float, float]):
-        """
-        Args:
-            ds_path: Path to processed dataset.
-            batch_size: Batch size.
-            num_workers: Number of workers for data loading.
-            num_test_samples: Number of samples in test set.
-            train_val_split: Percentage of training samples in train+val split.
-            n_pitch_bins: Number of bins for pitch quantization.
-            pitch_bounds: Min and max values for pitch quantization.
-            n_energy_bins: Number of bins for energy quantization.
-            energy_bounds: Min and max values for energy quantization.
-        """
+
+                 ):
 
         super().__init__()
 
-        self._ds_path_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(ds_path)
-
+        self._processed_ds_handler = processed_ds_handler
         self._batch_size = batch_size
         self._num_workers = num_workers
-        self._num_test_samples = num_test_samples
         self._train_val_split = train_val_split
+        self._ds_cfg = ds_cfg
 
-        self._train_set: Optional[_DataSet] = None
-        self._val_set: Optional[_DataSet] = None
-        self._test_set: Optional[_DataSet] = None
-
-        self._n_pitch_bins = n_pitch_bins
-        self._pitch_bounds = pitch_bounds
-        self._n_energy_bins = n_energy_bins
-        self._energy_bounds = energy_bounds
+        self._train_set: ProcessedLibriTTSRDataset | None = None
+        self._val_set: ProcessedLibriTTSRDataset | None = None
 
     def setup(self, stage: str) -> None:
 
         _logger().debug('Setting up dataset...')
 
-        all_samples = list(self._ds_path_handler.iter_samples())
-        random.shuffle(all_samples)
+        all_utterances = list(self._processed_ds_handler.iter_utterances())
+        random.shuffle(all_utterances)
 
-        test_samples = all_samples[:self._num_test_samples]
-        train_val_samples = all_samples[self._num_test_samples:]
+        n_train_samples = int(len(all_utterances) * self._train_val_split)
 
-        _logger().debug('Creating test set with %d samples.', len(test_samples))
-
-        self._test_set = _DataSet(self._ds_path_handler,
-                                  test_samples,
-                                  self._n_pitch_bins, self._pitch_bounds,
-                                  self._n_energy_bins, self._energy_bounds)
-
-        n_train_samples = int(len(train_val_samples) * self._train_val_split)
-
-        train_samples = train_val_samples[:n_train_samples]
-        val_samples = train_val_samples[n_train_samples:]
+        train_samples = all_utterances[:n_train_samples]
+        val_samples = all_utterances[n_train_samples:]
 
         _logger().debug('Creating train set with %d samples.', len(train_samples))
         _logger().debug('Creating validation set with %d samples.', len(val_samples))
 
-        self._train_set = _DataSet(self._ds_path_handler,
-                                   train_samples,
-                                   self._n_pitch_bins, self._pitch_bounds,
-                                   self._n_energy_bins, self._energy_bounds)
-
-        self._val_set = _DataSet(self._ds_path_handler,
-                                 val_samples,
-                                 self._n_pitch_bins, self._pitch_bounds,
-                                 self._n_energy_bins, self._energy_bounds)
+        self._train_set = ProcessedLibriTTSRDataset(self._ds_cfg, train_samples)
+        self._val_set = ProcessedLibriTTSRDataset(self._ds_cfg, val_samples)
 
     def train_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._train_set is not None, 'Make sure to call setup() before using this method!'
@@ -265,13 +281,3 @@ class ProcessedLibriTTSR(pl.LightningDataModule):
                                            num_workers=self._num_workers,
                                            pin_memory=True,
                                            collate_fn=self._val_set.collate_fn)
-
-    def test_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
-        assert self._test_set is not None, 'Make sure to call setup() before using this method!'
-
-        return torch.utils.data.DataLoader(self._test_set,
-                                           batch_size=self._batch_size,
-                                           shuffle=False,
-                                           num_workers=self._num_workers,
-                                           pin_memory=True,
-                                           collate_fn=self._test_set.collate_fn)
