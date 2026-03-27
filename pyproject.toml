@@ -21,8 +21,7 @@ dependencies = [
     "pytorch-fast-transformers>=0.4.0",
     "mlflow>=3.10.1",
     "seaborn==0.13.2",
-    "dvc[s3]==3.67.0",
-    "awscli==1.44.64"
+    "dvc[s3]==3.67.0"
 ]
 
 [project.optional-dependencies]
