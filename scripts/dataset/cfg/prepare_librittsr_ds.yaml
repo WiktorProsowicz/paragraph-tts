@@ -1,9 +1,8 @@
 ---
-raw_ds_path: tmp/LibriTTS_R_dev
+raw_ds_path: tmp/LibriTTS_R
 choose_splits: null
 alignments_path: data/librittsr_alignments
 output_dir: tmp/librittsr_processed
-metadata_output_dir: tmp/librittsr_processing_metadata
 
 processor_cfg:
   multi_speaker: true

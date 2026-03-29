@@ -77,8 +77,7 @@ class LibriTTSRProcessor:
     def process_dataset(self,
                         raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler,
                         alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
-                        output_dir: pathlib.Path,
-                        metadata_output_dir: pathlib.Path) -> None:
+                        output_dir: pathlib.Path) -> None:
         """Runs preprocessing on the dataset."""
 
         output_dir.mkdir(parents=True, exist_ok=True)

@@ -39,8 +39,7 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     ds_processor.process_dataset(
         raw_ds_handler=raw_ds_path_hand,
         alignments_handler=alignments_path_hand,
-        output_dir=pathlib.Path(script_cfg.output_dir),
-        metadata_output_dir=pathlib.Path(script_cfg.metadata_output_dir)
+        output_dir=pathlib.Path(script_cfg.output_dir)
     )
 
 
