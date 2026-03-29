@@ -152,12 +152,8 @@ class LibriTTSRProcessor:
 
         for utterance in processed_paragraph.utterances:
 
-            if not utterance.normalized_text_pth.exists():
-                if not self._prepare_utterance_draft(utterance, alignments_handler):
-                    processed_ds_handler.delete_utterance(utterance)
-
-                else:
-                    has_any_utterances_to_process = True
+            if not self._prepare_utterance_draft(utterance, alignments_handler):
+                processed_ds_handler.delete_utterance(utterance)
 
             else:
                 has_any_utterances_to_process = True
@@ -175,6 +171,11 @@ class LibriTTSRProcessor:
                                  alignments_handler: alignments_dir_handler.AlignmentsDirHandler
                                  ) -> bool:
         """Prepares an utterance for processing. Returns True if preparation was successful."""
+
+        if utt_info.text_features_pth.exists():
+            _logger().debug('Draft for utterance %s already exist, skipping.',
+                            utt_info.raw_utterance)
+            return True
 
         text_features = self._text_processor.tokenize_text(utt_info.raw_utterance.normalized_text)
 
