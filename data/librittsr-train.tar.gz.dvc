@@ -1,0 +1,5 @@
+outs:
+- md5: 206dfcd9b12bf8516329e46a42f569c0
+  size: 83917073586
+  hash: md5
+  path: librittsr-train/librittsr-train.tar.gz
