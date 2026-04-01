@@ -1,0 +1,6 @@
+outs:
+- md5: 01b43eabf3053ac798e7196463520c6b.dir
+  size: 60570661427
+  nfiles: 1
+  hash: md5
+  path: librittsr-processed
