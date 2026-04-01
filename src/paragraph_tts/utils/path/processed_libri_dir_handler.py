@@ -169,6 +169,30 @@ class ProcessedLibriDirHandler:
 
         utterance_dir.rmdir()
 
+    def delete_speaker(self, speaker_id: int) -> None:
+        """Deletes the given speaker from the processed dataset."""
+
+        spk_dir = self._speakers_path / str(speaker_id)
+
+        if not spk_dir.is_dir():
+            return
+
+        for item in spk_dir.rglob('*'):
+            if item.is_file():
+                item.unlink()
+            else:
+                item.rmdir()
+
+        spk_dir.rmdir()
+
+    def has_any_paragraphs_for_speaker(self, speaker_id: int) -> bool:
+        """Checks if there are any paragraphs for the given speaker in the processed dataset."""
+
+        spk_dir = self._speakers_path / str(speaker_id)
+        paragraphs_dir = spk_dir / 'paragraphs'
+
+        return paragraphs_dir.is_dir() and any(paragraphs_dir.iterdir())
+
     def iter_utterances(self, speaker_id: int | None = None) -> Iterator[ProcessedUtterance]:
         """Iterates over all utterances in the dataset."""
 

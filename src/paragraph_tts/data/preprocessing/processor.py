@@ -82,6 +82,8 @@ class LibriTTSRProcessor:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        processed_ds_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(output_dir)
+
         for speaker_id in tqdm.tqdm(raw_ds_handler.iter_speakers(),
                                     desc='Preparing paragraph drafts for speakers',
                                     unit='speaker'):
@@ -100,7 +102,10 @@ class LibriTTSRProcessor:
                                               alignments_handler,
                                               output_dir)
 
-        processed_ds_handler = processed_libri_dir_handler.ProcessedLibriDirHandler(output_dir)
+            if not processed_ds_handler.has_any_paragraphs_for_speaker(speaker_id):
+                _logger().debug(('No utterances processed for speaker %d, deleting speaker' 
+                                'from dataset.'), speaker_id)
+                processed_ds_handler.delete_speaker(speaker_id)
 
         for utterance in tqdm.tqdm(processed_ds_handler.iter_utterances(),
                                    desc='Preparing data for utterances',
@@ -340,6 +345,8 @@ class LibriTTSRProcessor:
                                   utterances: list[processed_libri_dir_handler.ProcessedUtterance],
                                   ) -> None:
         """Saves normalization stats for f0 and energy for the given utterances."""
+
+        _logger().debug('Calculating normalization stats for speaker %d', speaker_info.spk_id)
 
         f0_scaler = StandardScaler()
         energy_scaler = StandardScaler()
