@@ -1,0 +1,6 @@
+outs:
+- md5: 7c1e7bbfb8037f3871a16d81ae6b927b.dir
+  size: 83917073586
+  nfiles: 1
+  hash: md5
+  path: librittsr-train
