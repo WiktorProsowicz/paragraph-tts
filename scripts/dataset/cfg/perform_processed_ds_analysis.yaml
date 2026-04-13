@@ -1,0 +1,3 @@
+processed_ds_dir: tmp/librittsr_processed-dev
+processor_cfg_path: tmp/processor_cfg.yaml
+output_dir: tmp/processed_ds_analysis
