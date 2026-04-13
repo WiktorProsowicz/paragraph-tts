@@ -1,15 +1,11 @@
 """Contains classes for processing/reading LibriTTS-R dataset."""
 
-import json
 import logging
-import os
-from typing import Any
 from typing import Annotated
-from typing import Iterator
 import pickle
 import pathlib
 import tqdm
-
+import yaml
 
 import numpy as np
 import torch
@@ -103,7 +99,7 @@ class LibriTTSRProcessor:
                                               output_dir)
 
             if not processed_ds_handler.has_any_paragraphs_for_speaker(speaker_id):
-                _logger().debug(('No utterances processed for speaker %d, deleting speaker' 
+                _logger().debug(('No utterances processed for speaker %d, deleting speaker'
                                 'from dataset.'), speaker_id)
                 processed_ds_handler.delete_speaker(speaker_id)
 
@@ -128,6 +124,9 @@ class LibriTTSRProcessor:
                 self._prepare_spk_embedding(speaker_info, utterances)
 
             self._save_normalization_stats(speaker_info, utterances)
+
+        with output_dir.joinpath('processor_cfg.yaml').open('w', encoding='utf-8') as f:
+            yaml.safe_dump(self._cfg.model_dump(), f, sort_keys=False)
 
     def _prepare_paragraph_draft(self,
                                  paragraph_info: raw_libri_dir_handler.ParagraphInfo,
