@@ -6,17 +6,29 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 from typing import Annotated
+import pickle
 
 import lightning.pytorch as pl
 import torch
 import pydantic
 from pydantic import Field
 
+from torch_dev_utils.tts import text_prep
+
 from paragraph_tts.utils.path import processed_libri_dir_handler
+from paragraph_tts.utils.path import raw_libri_dir_handler
 
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
+
+
+class SampleMetadata(pydantic.BaseModel):
+    """Represents metadata for a sample in the processed dataset."""
+
+    raw_utterance: raw_libri_dir_handler.UtteranceInfo
+    raw_paragraph: raw_libri_dir_handler.ParagraphInfo
+    text_features: text_prep.TextFeatures
 
 
 class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]]):
@@ -69,6 +81,20 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
     def __len__(self) -> int:
         return len(self._utterances)
 
+    def get_sample_metadata(self, idx: int) -> SampleMetadata:
+        """Returns metadata for the sample with the given index."""
+
+        utterance = self._utterances[idx]
+
+        with utterance.text_features_pth.open('rb') as f:
+            text_features = pickle.load(f)
+
+        return SampleMetadata(
+            raw_utterance=utterance.raw_utterance,
+            raw_paragraph=utterance.paragraph.raw_paragraph,
+            text_features=text_features
+        )
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
 
         utterance = self._utterances[idx]
@@ -107,7 +133,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
             'spec_to_word_pool_matrix': torch.load(utterance.spec_to_word_pool_matrix_pth),
             'word_to_phoneme_indices': word_to_phoneme_indices,
             'sentence_pos': torch.tensor(utterance.utterance_pos.value, dtype=torch.long),
-            'spk_rate': torch.tensor(spec.shape[1] / phoneme_ids.shape[0], dtype=torch.float),
+            'spk_rate': torch.tensor(spec.shape[1] / input_word_embeddings.shape[0],
+                                     dtype=torch.float),
             'explicit_durations': torch.load(utterance.durations_pth),
             **data
         }
@@ -161,7 +188,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
             context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
             context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
         else:
-            context_token_pse = torch.empty(0,  dtype=torch.float)
+            context_token_pse = torch.empty(0, dtype=torch.float)
             context_pse_length = torch.tensor(0, dtype=torch.long)
 
         return {
