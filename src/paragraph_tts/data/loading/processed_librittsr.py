@@ -143,8 +143,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
                                sample: processed_libri_dir_handler.ProcessedUtterance
                                ) -> dict[str, torch.Tensor]:
 
-        f0 = torch.load(sample.f0_pth)
-        energy = torch.load(sample.energy_pth)
+        f0 = torch.load(sample.f0_pth).float()
+        energy = torch.load(sample.energy_pth).float()
 
         if self._cfg.scale_prosody_features:
 
@@ -159,7 +159,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
 
         if self._cfg.use_phoneme_level_prosody_features:
 
-            spec_to_phone_pool_matrix = torch.load(sample.spec_to_phone_pool_matrix_pth.T)
+            spec_to_phone_pool_matrix = torch.load(sample.spec_to_phone_pool_matrix_pth).T
 
             f0 = torch.matmul(spec_to_phone_pool_matrix, f0)
             energy = torch.matmul(spec_to_phone_pool_matrix, energy)
@@ -175,12 +175,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
 
         context_token_emb_list = torch.load(sample.paragraph.token_embeddings_path)
 
-        if context_token_emb_list:
-            context_token_emb = torch.cat(context_token_emb_list, dim=0).to(torch.float)
-            context_tokens_length = torch.tensor(context_token_emb.shape[0], dtype=torch.long)
-        else:
-            context_token_emb = torch.empty(0, dtype=torch.float)
-            context_tokens_length = torch.tensor(0, dtype=torch.long)
+        context_token_emb = torch.cat(context_token_emb_list, dim=0).to(torch.float)
+        context_tokens_length = torch.tensor(context_token_emb.shape[0], dtype=torch.long)
 
         context_token_pse_list = torch.load(sample.paragraph.pse_path)
 
@@ -188,7 +184,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
             context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
             context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
         else:
-            context_token_pse = torch.empty(0, dtype=torch.float)
+            context_token_pse = torch.empty((0, context_token_emb.shape[-1]), dtype=torch.float)
             context_pse_length = torch.tensor(0, dtype=torch.long)
 
         return {
@@ -205,6 +201,9 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
 
         for key in ['spk_emb', 'spk_rate', 'input_phonemes_length', 'input_spec_length',
                     'context_pse_length', 'context_tokens_length', 'sentence_pos']:
+
+            if not all(key in b for b in batch_samples):
+                continue
 
             batch[key] = torch.stack([b[key] for b in batch_samples], dim=0)
 
@@ -229,6 +228,9 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
 
         for key in ['context_token_emb', 'context_pse', 'input_word_emb', 'input_f0',
                     'input_energy', 'input_ling_stats', 'explicit_durations']:
+
+            if not all(key in b for b in batch_samples):
+                continue
 
             batch[key] = torch.nn.utils.rnn.pad_sequence(
                 [b[key] for b in batch_samples], batch_first=True, padding_value=0.0)
