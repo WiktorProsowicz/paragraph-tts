@@ -1,12 +1,12 @@
 """Contains definition of acoustic model training/inference pipelines."""
 import logging
-from typing import Any
-from typing import Dict
-from typing import Optional
+from typing import Annotated
 
 import lightning.pytorch as pl
+import pydantic
 import torch
 from comp_trans_tts.model import modules as ctt_modules
+from pydantic import Field
 from speechbrain.inference.vocoders import HIFIGAN
 
 from paragraph_tts.layers import acoustic as acoustic_layers
@@ -20,6 +20,51 @@ def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
+class ModelConfiguration(pydantic.BaseModel):
+    """Configuration of model architecture components."""
+
+    encoder: Annotated[acoustic_layers.encoder.Encoder.Configuration, Field(
+        description='Configuration of acoustic encoder.')]
+
+    decoder: Annotated[acoustic_layers.decoder.Decoder.Configuration, Field(
+        description='Configuration of acoustic decoder.')]
+
+    context_encoder: Annotated[acoustic_layers.context_encoder.ContextEncoder.Configuration,
+                               Field(description='Configuration of context encoder.')]
+
+    var_adaptor: Annotated[ctt_modules.VarianceAdaptor.Configuration, Field(
+        description='Configuration of variance adaptor module.')]
+
+
+class OptimizerConfiguration(pydantic.BaseModel):
+    """Optimizer parameters."""
+
+    lr: Annotated[float, Field(description='Learning rate.')]
+
+    betas: Annotated[tuple[float, float], Field(
+        description='Adam beta coefficients.')]
+
+    eps: Annotated[float, Field(description='Adam epsilon value.')]
+
+    weight_decay: Annotated[float, Field(description='Weight decay coefficient.')]
+
+    lr_scheduler_gamma: Annotated[float, Field(
+        description='Exponential decay factor of learning rate scheduler.')]
+
+
+class TrainConfiguration(pydantic.BaseModel):
+    """Training loop and objective configuration."""
+
+    loss_weights: Annotated[dict[str, float], Field(
+        description='Relative weights of different loss components used for optimization.')]
+
+    gradient_clip_val: Annotated[float, Field(
+        description='Gradient clipping value used by trainer.')]
+
+    accumulate_grad_batches: Annotated[int, Field(
+        description='Number of batches to accumulate gradients over.')]
+
+
 class AcousticModel(pl.LightningModule):
     """Predicts mel-spectrogram from input textual features.
 
@@ -27,44 +72,47 @@ class AcousticModel(pl.LightningModule):
     """
 
     def __init__(self,
-                 model_cfg: Dict[str, Any],
-                 optim_cfg: Dict[str, Any],
-                 train_cfg: Dict[str, Any],
-                 data_cfg: Dict[str, Any]) -> None:
+                 model_cfg: ModelConfiguration,
+                 optim_cfg: OptimizerConfiguration,
+                 train_cfg: TrainConfiguration) -> None:
 
         super().__init__()
 
         self._encoder = acoustic_layers.encoder.Encoder(
-            **model_cfg['encoder']
+            model_cfg.encoder
         )
 
         self._context_encoder = acoustic_layers.context_encoder.ContextEncoder(
-            **model_cfg['context_encoder']
+            model_cfg.context_encoder
         )
 
         self._decoder = acoustic_layers.decoder.Decoder(
-            **model_cfg['decoder']
+            model_cfg.decoder
         )
 
         self._var_adaptor = ctt_modules.VarianceAdaptor(
-            **model_cfg['var_adaptor']
+            **model_cfg.var_adaptor.model_dump()
         )
 
         self._model_cfg = model_cfg
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
-        self._data_cfg = data_cfg
 
         self.save_hyperparameters()
 
     def configure_optimizers(self):  # type: ignore
         """Sets up optimizer from config."""
 
-        opt = model_utils.optimizer_from_cfg(self._optim_cfg,
-                                             self.parameters())
+        opt = torch.optim.AdamW(
+            self.parameters(),
+            lr=self._optim_cfg.lr,
+            betas=self._optim_cfg.betas,
+            eps=self._optim_cfg.eps,
+            weight_decay=self._optim_cfg.weight_decay
+        )
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            opt, gamma=self._optim_cfg['lr_decay']
+            opt, gamma=self._optim_cfg.lr_scheduler_gamma
         )
 
         return {
@@ -73,9 +121,9 @@ class AcousticModel(pl.LightningModule):
         }
 
     def forward(self,  # pylint: disable=arguments-differ
-                inputs: Dict[str, torch.Tensor],
+                inputs: dict[str, torch.Tensor],
                 use_teacher_forcing: bool
-                ) -> Dict[str, torch.Tensor]:
+                ) -> dict[str, torch.Tensor]:
         """Performs forward pass of the model."""
 
         enc_output = self._encoder(
@@ -100,7 +148,7 @@ class AcousticModel(pl.LightningModule):
 
         enc_output_enriched = enc_output + context_output
 
-        forced_args: Dict[str, Optional[torch.Tensor]] = {
+        forced_args: dict[str, torch.Tensor | None] = {
             'explicit_duration': None,
             'pitch_target': None,
             'energy_target': None
@@ -143,7 +191,7 @@ class AcousticModel(pl.LightningModule):
         }
 
     def training_step(self,  # pylint: disable=arguments-differ
-                      batch: Dict[str, torch.Tensor],
+                      batch: dict[str, torch.Tensor],
                       batch_idx: int) -> torch.Tensor:
         """Performs training step."""
 
@@ -157,22 +205,20 @@ class AcousticModel(pl.LightningModule):
         self.log_dict(logged_dict,
                       on_step=True,
                       on_epoch=False,
-                      batch_size=self._data_cfg['batch_size'])
+                      batch_size=self._data_cfg.batch_size)
 
-        if self._should_visualize(batch_idx, training=True):
+        for sample_idx in range(min(10, self._data_cfg.batch_size)):
 
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
-
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        None,
-                                        'training',
-                                        sample_idx)
+            self._visualize_outputs(batch,
+                                    model_output,
+                                    None,
+                                    'training',
+                                    sample_idx)
 
         return sum(losses.values())  # type: ignore
 
     def validation_step(self,  # pylint: disable=arguments-differ
-                        batch: Dict[str, torch.Tensor],
+                        batch: dict[str, torch.Tensor],
                         batch_idx: int) -> None:
         """Performs validation step."""
 
@@ -186,36 +232,34 @@ class AcousticModel(pl.LightningModule):
         self.log_dict(logged_dict,
                       on_step=False,
                       on_epoch=True,
-                      batch_size=self._data_cfg['batch_size'])
+                      batch_size=self._data_cfg.batch_size)
 
-        if self._should_visualize(batch_idx, training=False):
+        hifi_gan = HIFIGAN.from_hparams(source='speechbrain/tts-hifigan-libritts-22050Hz',
+                                        run_opts={'device': self.device})
 
-            hifi_gan = HIFIGAN.from_hparams(source='speechbrain/tts-hifigan-libritts-22050Hz',
-                                            run_opts={'device': self.device})
+        for sample_idx in range(min(10, self._data_cfg.batch_size)):
 
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+            self._visualize_outputs(batch,
+                                    model_output,
+                                    hifi_gan,
+                                    'teacher_forcing',
+                                    sample_idx)
 
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        hifi_gan,
-                                        'teacher_forcing',
-                                        sample_idx)
+        model_output = self.forward(batch,
+                                    use_teacher_forcing=False)
 
-            model_output = self.forward(batch,
-                                        use_teacher_forcing=False)
+        for sample_idx in range(min(10, self._data_cfg.batch_size)):
 
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
-
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        hifi_gan,
-                                        'inference',
-                                        sample_idx,)
+            self._visualize_outputs(batch,
+                                    model_output,
+                                    hifi_gan,
+                                    'inference',
+                                    sample_idx,)
 
     def _visualize_outputs(self,
-                           batch: Dict[str, torch.Tensor],
-                           model_output: Dict[str, torch.Tensor],
-                           hifi_gan: Optional[HIFIGAN],
+                           batch: dict[str, torch.Tensor],
+                           model_output: dict[str, torch.Tensor],
+                           hifi_gan: HIFIGAN | None,
                            base_label: str,
                            sample_idx: int) -> None:
         """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
@@ -315,30 +359,9 @@ class AcousticModel(pl.LightningModule):
                                   self.trainer.global_step,
                                   sample_rate=22050)
 
-    def _should_visualize(self,
-                          batch_idx: int,
-                          training: bool) -> bool:
-        """Decides whether to visualize outputs on the current train/val step."""
-
-        if (self.trainer.current_epoch + 1) % self._train_cfg['visualize_every_n_epochs'] != 0:
-            return False
-
-        if not training and batch_idx != 0:
-            return False
-
-        if training:
-            n_viz = self._train_cfg['visualize_n_times_during_training']
-            viz_interval = self.trainer.num_training_batches // (n_viz + 1)
-            proper_indices = [(i + 1) * viz_interval for i in range(n_viz)]
-
-            if batch_idx not in proper_indices:
-                return False
-
-        return True
-
     def _calculate_losses(self,
-                          model_output: Dict[str, torch.Tensor],
-                          batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+                          model_output: dict[str, torch.Tensor],
+                          batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Calculates losses from model output and target features."""
 
         mel_loss = torch.nn.MSELoss(reduction='none')(model_output['pred_mel_spec'],
@@ -386,8 +409,11 @@ class AcousticModel(pl.LightningModule):
             duration_loss = (duration_loss * duration_mask).sum() / duration_mask.sum()
             losses['duration_pred_loss'] = duration_loss
 
+        loss_est_max = self._train_cfg.loss_est_max.model_dump()
+        loss_weights = self._train_cfg.loss_weights.model_dump()
+
         for l_name in losses:
-            losses[l_name] /= self._train_cfg['loss_est_max'][l_name]
-            losses[l_name] *= self._train_cfg['loss_weights'][l_name]
+            losses[l_name] /= loss_est_max[l_name]
+            losses[l_name] *= loss_weights[l_name]
 
         return losses

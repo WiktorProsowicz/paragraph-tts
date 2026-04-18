@@ -1,56 +1,42 @@
 ---
 run_cfg:
-  mlflow_experiment: Default
-  mlflow_run_name: Default
-    # If true, runs a quick development run (may ignore some settings).
-  dev_run: false
-    # If set, overrides num_epochs and runs for the specified number of steps.
+  mlflow_server_uri: http://localhost:5000
+  mlflow_experiment: debug
+  mlflow_run: sample_run
+  seed: 2137
+  # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
+  max_epochs: 50
+  early_stopping_patience: 3
+  ds_path: tmp/librittsr_processed
+  batch_size: 2
+  save_checkpoints: true
+  num_workers: 4
+  train_val_split: 0.95
+
+ds_cfg:
+  load_prosody_features: true
+  pitch_quantization_params: [48, -2.0, 3.0]
+  energy_quantization_params: [48, -2.0, 3.0]
+  scale_prosody_features: true
+  use_phoneme_level_prosody_features: false
+  load_context_embeddings: true
 
 train_cfg:
-  seed: 2137
-  visualize_every_n_epochs: 1
-  visualize_n_times_during_training: 5
-  val_every_n_epochs: 1
-  save_checkpoints: true
-  max_epochs: 50
-  accumulate_grad_batches: 4
-    # If set, loads model weights from the specified checkpoint before training.
-  load_model_from_checkpoint:
   loss_weights:
-    mel_loss: 2.0
+    mel_loss: 1.0
     pitch_pred_loss: 1.0
     energy_pred_loss: 1.0
     duration_pred_loss: 1.0
-  loss_est_max:
-    mel_loss: 3.0
-    pitch_pred_loss: 1.0
-    energy_pred_loss: 1.15
-    duration_pred_loss: 40.0
   gradient_clip_val: 0.5
-
-
-data_cfg:
-  processed_ds_path: tmp/librittsr_processed
-  batch_size: 2
-  num_workers: 4
-  num_test_samples: 100
-  train_val_split: 0.95
-  explicit_prosody_quant:
-    n_pitch_bins: 48
-    pitch_bounds_min: -2.0
-    pitch_bounds_max: 3.0
-    n_energy_bins: 48
-    energy_bounds_min: -2.0
-    energy_bounds_max: 3.0
+  accumulate_grad_batches: 4
 
 optim_cfg:
-  name: adam
-  params:
-    lr: 0.0002
-    betas: [0.9, 0.999]
-    eps: 1e-8
-  lr_decay: 0.95
+  lr: 1e-3
+  betas: [0.9, 0.98]
+  eps: 1e-8
+  weight_decay: 1e-5
+  lr_scheduler_gamma: 0.98
 
 model_cfg:
   encoder:

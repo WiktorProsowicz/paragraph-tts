@@ -50,10 +50,18 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     if script_cfg.train_cfg.load_model_from_checkpoint is None:
 
         model = acoustic_model.AcousticModel(
-            model_cfg=omegaconf.OmegaConf.to_container(script_cfg.model_cfg),  # type: ignore
-            optim_cfg=omegaconf.OmegaConf.to_container(script_cfg.optim_cfg),  # type: ignore
-            train_cfg=omegaconf.OmegaConf.to_container(script_cfg.train_cfg),  # type: ignore
-            data_cfg=omegaconf.OmegaConf.to_container(script_cfg.data_cfg)  # type: ignore
+            model_cfg=acoustic_model.ModelConfiguration.model_validate(
+                omegaconf.OmegaConf.to_container(script_cfg.model_cfg, resolve=True)
+            ),
+            optim_cfg=acoustic_model.OptimizerConfiguration.model_validate(
+                omegaconf.OmegaConf.to_container(script_cfg.optim_cfg, resolve=True)
+            ),
+            train_cfg=acoustic_model.TrainConfiguration.model_validate(
+                omegaconf.OmegaConf.to_container(script_cfg.train_cfg, resolve=True)
+            ),
+            data_cfg=acoustic_model.DataConfiguration.model_validate(
+                omegaconf.OmegaConf.to_container(script_cfg.data_cfg, resolve=True)
+            )
         )
 
     else:
