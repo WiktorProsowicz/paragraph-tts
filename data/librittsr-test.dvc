@@ -1,0 +1,6 @@
+outs:
+- md5: 871f1d2ab299ddbab1f00e7959a78be0.dir
+  size: 2306459834
+  nfiles: 1
+  hash: md5
+  path: librittsr-test

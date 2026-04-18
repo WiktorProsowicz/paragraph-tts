@@ -8,13 +8,14 @@ import os
 import sys
 from typing import Iterator
 
+import pydantic
+
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-@dataclasses.dataclass
-class UtteranceInfo:
+class UtteranceInfo(pydantic.BaseModel):
     """Contains information about an utterance."""
 
     utt_id: int
@@ -22,11 +23,10 @@ class UtteranceInfo:
     chap_id: int
     para_id: int
     normalized_text: str
-    wav_path: pathlib.Path | None = None
+    wav_path: str | None = None
 
 
-@dataclasses.dataclass
-class ParagraphInfo:
+class ParagraphInfo(pydantic.BaseModel):
     """Contains information about a paragraph."""
 
     spk_id: int
@@ -133,7 +133,7 @@ class RawLibriDirHandler:
                     )
 
                     if os.path.exists(wav_path):
-                        utt_info.wav_path = pathlib.Path(wav_path)
+                        utt_info.wav_path = wav_path
 
                 yield para_info
 
