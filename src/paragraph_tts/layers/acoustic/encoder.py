@@ -1,4 +1,5 @@
 """Contains definition of acoustic model's encoder module."""
+import pydantic
 import torch
 from comp_trans_tts.model.transformers import conformer
 
@@ -9,34 +10,38 @@ from paragraph_tts.utils import neural as neural_utils
 class Encoder(torch.nn.Module):
     """Encodes input phonemes, BERT embeddings and linguistic stats."""
 
-    def __init__(self,
-                 hidden_size: int,
-                 phoneme_vocab_size: int,
-                 pos_tags_vocab_size: int,
-                 ling_stats_dim: int,
-                 input_bert_dim: int,
-                 n_att_blocks: int,
-                 conformer_kernel_size: int,
-                 att_feature_map_dim: int,
-                 num_att_heads: int,
-                 prenet_dropout_rate: float,
-                 blocks_dropout_rate: float):
+    class Configuration(pydantic.BaseModel):
+        """Input configuration for acoustic encoder."""
+
+        hidden_size: int
+        phoneme_vocab_size: int
+        pos_tags_vocab_size: int
+        ling_stats_dim: int
+        input_bert_dim: int
+        n_att_blocks: int
+        conformer_kernel_size: int
+        att_feature_map_dim: int
+        num_att_heads: int
+        prenet_dropout_rate: float
+        blocks_dropout_rate: float
+
+    def __init__(self, cfg: Configuration):
 
         super().__init__()
 
         self._phoneme_emb = torch.nn.Embedding(
-            num_embeddings=phoneme_vocab_size,
-            embedding_dim=hidden_size
+            num_embeddings=cfg.phoneme_vocab_size,
+            embedding_dim=cfg.hidden_size
         )
 
         self._pos_tags_emb = torch.nn.Embedding(
-            num_embeddings=pos_tags_vocab_size,
-            embedding_dim=pos_tags_vocab_size // 2
+            num_embeddings=cfg.pos_tags_vocab_size,
+            embedding_dim=cfg.pos_tags_vocab_size // 2
         )
 
         self._ling_stats_fc = torch.nn.Linear(
-            in_features=ling_stats_dim + (pos_tags_vocab_size // 2),
-            out_features=hidden_size
+            in_features=cfg.ling_stats_dim + (cfg.pos_tags_vocab_size // 2),
+            out_features=cfg.hidden_size
         )
 
         sentence_pos_emb_dim = 8
@@ -47,35 +52,35 @@ class Encoder(torch.nn.Module):
         )
 
         self._bert_enc = torch.nn.Sequential(
-            torch.nn.Linear(input_bert_dim, hidden_size),
+            torch.nn.Linear(cfg.input_bert_dim, cfg.hidden_size),
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=prenet_dropout_rate)
+            torch.nn.Dropout(p=cfg.prenet_dropout_rate)
         )
 
         self._prenet = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 3 + sentence_pos_emb_dim + 1, hidden_size),
+            torch.nn.Linear(cfg.hidden_size * 3 + sentence_pos_emb_dim + 1, cfg.hidden_size),
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=prenet_dropout_rate),
-            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.Dropout(p=cfg.prenet_dropout_rate),
+            torch.nn.Linear(cfg.hidden_size, cfg.hidden_size),
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=prenet_dropout_rate)
+            torch.nn.Dropout(p=cfg.prenet_dropout_rate)
         )
 
         self._blocks = torch.nn.ModuleList(
             [
                 conformer.ConformerBlock(
                     attention_module=permute_former_att.PermuteFormerMHA(
-                        d_model=hidden_size,
-                        num_heads=num_att_heads,
-                        feature_map_dim=att_feature_map_dim
+                        d_model=cfg.hidden_size,
+                        num_heads=cfg.num_att_heads,
+                        feature_map_dim=cfg.att_feature_map_dim
                     ),
-                    encoder_dim=hidden_size,
-                    feed_forward_dropout_p=blocks_dropout_rate,
-                    attention_dropout_p=blocks_dropout_rate,
-                    conv_dropout_p=blocks_dropout_rate,
-                    conv_kernel_size=conformer_kernel_size
+                    encoder_dim=cfg.hidden_size,
+                    feed_forward_dropout_p=cfg.blocks_dropout_rate,
+                    attention_dropout_p=cfg.blocks_dropout_rate,
+                    conv_dropout_p=cfg.blocks_dropout_rate,
+                    conv_kernel_size=cfg.conformer_kernel_size
                 )
-                for _ in range(n_att_blocks)
+                for _ in range(cfg.n_att_blocks)
             ]
         )
 

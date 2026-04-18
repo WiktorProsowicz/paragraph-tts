@@ -1,5 +1,10 @@
 """Contains definition of context encoder producing context embeddings for acoustic model."""
+
+from typing import Annotated
+
 import torch
+import pydantic
+from pydantic import Field
 
 from paragraph_tts.layers.shared import cbhg
 from paragraph_tts.layers.shared import permute_former_att
@@ -116,38 +121,42 @@ class _ContextProcessingBlock(torch.nn.Module):
 class ContextEncoder(torch.nn.Module):
     """Encodes context sentences into phoneme-level context embeddings."""
 
-    def __init__(self,
-                 input_emb_dim: int,
-                 hidden_size: int,
-                 phonemes_hidden_size: int,
-                 n_blocks: int,
-                 cbhg_k_banks: int,
-                 dropout_rate: float,
-                 num_att_heads: int,
-                 att_feature_map_dim: int):
+    class Configuration(pydantic.BaseModel):
+        """Input configuration for context encoder."""
+
+        input_emb_dim: int
+        hidden_size: int
+        phonemes_hidden_size: int
+        n_blocks: int
+        cbhg_k_banks: int
+        dropout_rate: float
+        num_att_heads: int
+        att_feature_map_dim: int
+
+    def __init__(self, cfg: Configuration):
 
         super().__init__()
 
         self._token_embs_enc = _ContextProcessingBlock(
-            input_emb_dim=input_emb_dim,
-            hidden_size=hidden_size,
-            phonemes_hidden_size=phonemes_hidden_size,
-            n_blocks=n_blocks,
-            cbhg_k_banks=cbhg_k_banks,
-            dropout_rate=dropout_rate,
-            num_att_heads=num_att_heads,
-            att_feature_map_dim=att_feature_map_dim
+            input_emb_dim=cfg.input_emb_dim,
+            hidden_size=cfg.hidden_size,
+            phonemes_hidden_size=cfg.phonemes_hidden_size,
+            n_blocks=cfg.n_blocks,
+            cbhg_k_banks=cfg.cbhg_k_banks,
+            dropout_rate=cfg.dropout_rate,
+            num_att_heads=cfg.num_att_heads,
+            att_feature_map_dim=cfg.att_feature_map_dim
         )
 
         self._pse_enc = _ContextProcessingBlock(
-            input_emb_dim=input_emb_dim,
-            hidden_size=hidden_size,
-            phonemes_hidden_size=phonemes_hidden_size,
-            n_blocks=n_blocks,
-            cbhg_k_banks=cbhg_k_banks,
-            dropout_rate=dropout_rate,
-            num_att_heads=num_att_heads,
-            att_feature_map_dim=att_feature_map_dim
+            input_emb_dim=cfg.input_emb_dim,
+            hidden_size=cfg.hidden_size,
+            phonemes_hidden_size=cfg.phonemes_hidden_size,
+            n_blocks=cfg.n_blocks,
+            cbhg_k_banks=cfg.cbhg_k_banks,
+            dropout_rate=cfg.dropout_rate,
+            num_att_heads=cfg.num_att_heads,
+            att_feature_map_dim=cfg.att_feature_map_dim
         )
 
     def forward(self,
