@@ -91,22 +91,22 @@ class ProcessedDSAnalyzer:
                            f'Mean F0: {row["mean_f0"]:.2f} Hz - '
                            f'Mean energy: {row["mean_energy"]:.2f} - '
                            f'Speaking rate: {row["spk_rate"]:.2f} spec frames / word'),
-                    output_path=example_dir.joinpath('input_spectrogram.png'))
+                    output_path=example_dir.joinpath('input_spectrogram.svg'))
 
                 viz_utils.plot_and_save_contour(
                     sample['input_f0'].cpu().numpy(),
                     contour_name='Input F0',
-                    output_path=example_dir.joinpath('input_f0_contour.png'))
+                    output_path=example_dir.joinpath('input_f0_contour.svg'))
 
                 viz_utils.plot_and_save_contour(
                     sample['input_energy'].cpu().numpy(),
                     contour_name='Input energy',
-                    output_path=example_dir.joinpath('input_energy_contour.png'))
+                    output_path=example_dir.joinpath('input_energy_contour.svg'))
 
                 viz_utils.plot_and_save_contour(
                     sample['explicit_durations'].cpu().numpy(),
                     contour_name='Explicit durations',
-                    output_path=example_dir.joinpath('explicit_durations_contour.png'))
+                    output_path=example_dir.joinpath('explicit_durations_contour.svg'))
 
     def _save_t_sne_scatter_for_spk_embeddings(self, output_dir: pathlib.Path) -> None:
         """Saves a T-SNE scatter plot of speaker embeddings separated by speaker gender."""
@@ -140,7 +140,7 @@ class ProcessedDSAnalyzer:
         ax.legend(title='Speaker gender')
 
         fig.tight_layout()
-        fig.savefig(plot_dir.joinpath('speaker_embeddings_by_gender.png'), dpi=200)
+        fig.savefig(plot_dir.joinpath('speaker_embeddings_by_gender.svg'), dpi=200)
         plt.close(fig)
 
     def _obtain_t_sne_spk_embeddings_scatter(self) -> pd.DataFrame:
