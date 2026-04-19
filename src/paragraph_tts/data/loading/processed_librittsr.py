@@ -167,6 +167,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         return {
             'input_f0': f0,
             'input_energy': energy,
+            'prosody_features_length': torch.tensor(f0.shape[0], dtype=torch.long)
         }
 
     def _load_context_features(self,
@@ -184,8 +185,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
             context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
             context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
         else:
-            context_token_pse = torch.empty((0, context_token_emb.shape[-1]), dtype=torch.float)
-            context_pse_length = torch.tensor(0, dtype=torch.long)
+            context_token_pse = torch.zeros((1, context_token_emb.shape[-1]), dtype=torch.float)
+            context_pse_length = torch.tensor(1, dtype=torch.long)
 
         return {
             'context_token_emb': context_token_emb,
@@ -200,7 +201,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         batch = {}
 
         for key in ['spk_emb', 'spk_rate', 'input_phonemes_length', 'input_spec_length',
-                    'context_pse_length', 'context_tokens_length', 'sentence_pos']:
+                    'context_pse_length', 'context_tokens_length', 'sentence_pos',
+                    'prosody_features_length']:
 
             if not all(key in b for b in batch_samples):
                 continue

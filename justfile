@@ -34,14 +34,7 @@ setup_mlflow_server:
     #!/usr/bin/env bash
     echo "Setting up MLflow server..."
     source .venv/bin/activate
-    mlflow server --backend-store-uri sqlite:///mlflow_tracking.db --default-artifact-root ./mlflow_artifacts/ --host 0.0.0.0 --port 5000
-
-# Run TensorBoard server for visualizing training metrics and logs.
-setup_tensorboard_server:
-    #!/usr/bin/env bash
-    echo "Setting up TensorBoard..."
-    source .venv/bin/activate
-    tensorboard --host 0.0.0.0 --port 5001 --logdir tensorboard/
+    mlflow server --backend-store-uri sqlite:///mlflow_tracking.db --default-artifact-root ./mlflow_artifacts/ --host 0.0.0.0 --port 5000 --workers 1
 
 # Run pre-commit hooks on all files.
 run_pre_commit:
