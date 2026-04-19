@@ -33,8 +33,9 @@ class ModelConfiguration(pydantic.BaseModel):
     decoder: Annotated[acoustic_decoder.Decoder.Configuration, Field(
         description='Configuration of acoustic decoder.')]
 
-    context_encoder: Annotated[acoustic_context_encoder.ContextEncoder.Configuration,
-                               Field(description='Configuration of context encoder.')]
+    context_encoder: Annotated[acoustic_context_encoder.ContextEncoder.Configuration | None, Field(
+        description=('Configuration of context encoder.'
+                     'If none, context encoder is not used.'))]
 
     var_adaptor: Annotated[ctt_modules.VarianceAdaptor.Configuration, Field(
         description='Configuration of variance adaptor module.')]
@@ -86,9 +87,14 @@ class AcousticModel(pl.LightningModule):
         self._encoder = acoustic_encoder.Encoder(
             model_cfg.encoder
         )
-        self._context_encoder = acoustic_context_encoder.ContextEncoder(
-            model_cfg.context_encoder
-        )
+
+        if model_cfg.context_encoder is not None:
+            self._context_encoder = acoustic_context_encoder.ContextEncoder(
+                model_cfg.context_encoder
+            )
+        else:
+            self._context_encoder = None
+
         self._decoder = acoustic_decoder.Decoder(
             model_cfg.decoder
         )
@@ -145,16 +151,18 @@ class AcousticModel(pl.LightningModule):
             inputs['input_phonemes_length']
         )
 
-        context_output = self._context_encoder(
-            inputs['context_token_emb'],
-            inputs['context_tokens_length'],
-            inputs['context_pse'],
-            inputs['context_pse_length'],
-            enc_output,
-            inputs['input_phonemes_length']
-        )
+        if self._context_encoder is not None:
 
-        enc_output_enriched = enc_output + context_output
+            context_output = self._context_encoder(
+                inputs['context_token_emb'],
+                inputs['context_tokens_length'],
+                inputs['context_pse'],
+                inputs['context_pse_length'],
+                enc_output,
+                inputs['input_phonemes_length']
+            )
+
+            enc_output = enc_output + context_output
 
         forced_args: dict[str, torch.Tensor | None] = {
             'explicit_durations': None,
@@ -171,7 +179,7 @@ class AcousticModel(pl.LightningModule):
             }
 
         var_adaptor_inputs = ctt_modules.VarianceAdaptor.ForwardInput(
-            phoneme_repr=enc_output_enriched,
+            phoneme_repr=enc_output,
             phonemes_length=inputs['input_phonemes_length'],
             pitch_possible_values=inputs.get('pitch_possible_values'),
             energy_possible_values=inputs.get('energy_possible_values'),
