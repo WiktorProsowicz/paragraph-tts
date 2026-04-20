@@ -40,6 +40,10 @@ class ModelConfiguration(pydantic.BaseModel):
     var_adaptor: Annotated[ctt_modules.VarianceAdaptor.Configuration, Field(
         description='Configuration of variance adaptor module.')]
 
+    prosody_encoder: Annotated[ctt_modules.HierarchicalProsodyEncoder.Configuration | None, Field(
+        description=('Configuration of hierarchical prosody encoder module.'
+                     'If none, hierarchical prosody encoder is not used.'))]
+
 
 class OptimizerConfiguration(pydantic.BaseModel):
     """Optimizer parameters."""
@@ -63,11 +67,26 @@ class TrainConfiguration(pydantic.BaseModel):
     loss_weights: Annotated[dict[str, float], Field(
         description='Relative weights of different loss components used for optimization.')]
 
+    loss_weight_decays: Annotated[dict[str, float], Field(
+        description='Decay factors for loss weights.')]
+
     gradient_clip_val: Annotated[float, Field(
         description='Gradient clipping value used by trainer.')]
 
     accumulate_grad_batches: Annotated[int, Field(
         description='Number of batches to accumulate gradients over.')]
+
+    stl_bin_init_temperature: Annotated[float, Field(
+        description='Initial temperature for STL binarization in prosody encoder.')]
+
+    stl_bin_temperature_decay: Annotated[float, Field(
+        description='Decay factor for temperature of STL binarization in prosody encoder.')]
+
+    stl_bin_loss_start_epoch: Annotated[int, Field(
+        description='Epoch to start applying binarization loss for prosody encoder.')]
+
+    stl_bin_hard_start_epoch: Annotated[int, Field(
+        description='Epoch to start using hard binarization in prosody encoder.')]
 
 
 class AcousticModel(pl.LightningModule):
@@ -95,6 +114,13 @@ class AcousticModel(pl.LightningModule):
         else:
             self._context_encoder = None
 
+        if model_cfg.prosody_encoder is not None:
+            self._prosody_encoder = ctt_modules.HierarchicalProsodyEncoder(
+                model_cfg.prosody_encoder
+            )
+        else:
+            self._prosody_encoder = None
+
         self._decoder = acoustic_decoder.Decoder(
             model_cfg.decoder
         )
@@ -112,7 +138,12 @@ class AcousticModel(pl.LightningModule):
         self._visualize_n_batches = 3
         self._visualize_n_samples_per_batch = 3
 
-        self._loss = model_utils.AcousticModelLoss(train_cfg.loss_weights)
+        self._loss = model_utils.AcousticModelLoss(
+            train_cfg.loss_weights,
+            train_cfg.loss_weight_decays,
+            train_cfg.stl_bin_loss_start_epoch
+        )
+        self._metrics = model_utils.AcousticModelMetrics()
 
     def configure_optimizers(self):  # type: ignore
         """Sets up optimizer from config."""
@@ -164,6 +195,53 @@ class AcousticModel(pl.LightningModule):
 
             enc_output = enc_output + context_output
 
+        prosody_enc_outputs: dict[str, torch.Tensor] = {}
+
+        if self._prosody_encoder is not None:
+
+            if self.current_epoch < self._train_cfg.stl_bin_hard_start_epoch:
+                bin_params = ctt_modules.StlBinarizationParams(
+                    hard=False,
+                    temperature=model_utils.calc_decayed_loss_weight(
+                        self._train_cfg.stl_bin_init_temperature,
+                        self._train_cfg.stl_bin_temperature_decay,
+                        self.current_epoch
+                    )
+                )
+            else:
+                bin_params = ctt_modules.StlBinarizationParams(
+                    hard=True,
+                    temperature=model_utils.calc_decayed_loss_weight(
+                        self._train_cfg.stl_bin_init_temperature,
+                        self._train_cfg.stl_bin_temperature_decay,
+                        self._train_cfg.stl_bin_hard_start_epoch
+                    )
+                )
+
+            ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
+                spectrogram=inputs['input_spec'],
+                spectrogram_length=inputs['input_spec_length'],
+                spec_word_pool_matrix=inputs['spec_to_word_pool_matrix'],
+                phoneme_ids=inputs['input_phoneme_ids'],
+                linguistic_features=inputs['input_ling_stats'],
+                phoneme_spec_indices=inputs['phone_to_spec_indices'],
+                local_stl_binarization_params=bin_params)
+
+            gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
+            wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
+                              inputs['word_to_phoneme_indices']]
+
+            if bin_params.hard:
+                gst_emb = gst_emb.detach()
+                wsv_emb = wsv_emb.detach()
+                gst_weights = gst_weights.detach()
+                wsv_weights = wsv_weights.detach()
+
+            prosody_enc_outputs['gst_weights'] = gst_weights
+            prosody_enc_outputs['wsv_weights'] = wsv_weights
+
+            enc_output = enc_output + gst_emb + wsv_emb
+
         forced_args: dict[str, torch.Tensor | None] = {
             'explicit_durations': None,
             'pitch_target': None,
@@ -202,7 +280,8 @@ class AcousticModel(pl.LightningModule):
 
         return {
             'pred_mel_spec': pred_mel_spec,
-            **var_adaptor_output
+            **var_adaptor_output,
+            **prosody_enc_outputs
         }
 
     def training_step(self,  # pylint: disable=arguments-differ
@@ -212,9 +291,12 @@ class AcousticModel(pl.LightningModule):
         model_output = self.forward(batch,
                                     use_teacher_forcing=True)
 
-        losses = self._loss(model_output, batch)
+        losses = self._loss(model_output, batch, self.current_epoch)
 
-        logged_dict = {f'train/{k}': v.detach().item() for k, v in losses.items()}
+        with torch.no_grad():
+            metrics = self._metrics(model_output, batch)
+
+        logged_dict = {f'train/{k}': v.detach().item() for k, v in {**losses, **metrics}.items()}
 
         self.log_dict(logged_dict,
                       on_step=True,
@@ -228,12 +310,13 @@ class AcousticModel(pl.LightningModule):
                         batch_idx: int) -> None:
         """Performs validation step."""
 
-        model_output = self.forward(batch,
-                                    use_teacher_forcing=True)
+        model_output = self(batch,
+                            use_teacher_forcing=True)
 
-        losses = self._loss(model_output, batch)
+        losses = self._loss(model_output, batch, self.current_epoch)
+        metrics = self._metrics(model_output, batch)
 
-        logged_dict = {f'val/{k}': v.detach().item() for k, v in losses.items()}
+        logged_dict = {f'val/{k}': v.detach().item() for k, v in {**losses, **metrics}.items()}
 
         self.log_dict(logged_dict,
                       on_step=False,

@@ -123,6 +123,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         return {
             'spk_emb': torch.load(utterance.paragraph.speaker_info.embedding_path),
             'input_word_emb': input_word_embeddings,
+            'input_word_emb_length': torch.tensor(input_word_embeddings.shape[0], dtype=torch.long),
             'input_phoneme_ids': phoneme_ids,
             'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
@@ -202,7 +203,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
 
         for key in ['spk_emb', 'spk_rate', 'input_phonemes_length', 'input_spec_length',
                     'context_pse_length', 'context_tokens_length', 'sentence_pos',
-                    'prosody_features_length']:
+                    'prosody_features_length', 'input_word_emb_length']:
 
             if not all(key in b for b in batch_samples):
                 continue

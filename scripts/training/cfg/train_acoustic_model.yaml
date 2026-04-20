@@ -28,8 +28,21 @@ train_cfg:
     pitch_pred_loss: 1.0
     energy_pred_loss: 1.0
     duration_pred_loss: 1.0
+    wsv_diversity_loss: 0.3
+    wsv_entropy_loss: 1.0
+  loss_weight_decays:
+    mel_loss: 1.0
+    pitch_pred_loss: 1.0
+    energy_pred_loss: 1.0
+    duration_pred_loss: 1.0
+    wsv_diversity_loss: 0.97
+    wsv_entropy_loss: 1.01
   gradient_clip_val: 0.5
   accumulate_grad_batches: 4
+  stl_bin_init_temperature: 1.0
+  stl_bin_temperature_decay: 0.98
+  stl_bin_loss_start_epoch: 20
+  stl_bin_hard_start_epoch: 120
 
 optimizer_cfg:
   lr: 1e-3
@@ -78,3 +91,24 @@ model_cfg:
     dropout_rate: 0.1
     spk_emb_dim: 512
     use_prosody_modelling: 'utterance'
+  prosody_encoder:
+    ref_encoder_cfg:
+      d_model: 32
+      n_mel_channels: 80
+      conv_filters: [32, 32, 64, 128, 128]
+      conv_kernel_size: 3
+      conv_stride: [1, 2]
+      conv_padding: [1, 1]
+      gru_size: 32
+      dropout_rate: 0.1
+    global_stl_cfg:
+      n_tokens: 10
+      d_model: 32
+    local_stl_cfg:
+      n_tokens: 64
+      d_model: 32
+    ling_aware_cfg:
+      phonemes_vocab_size: 74
+      d_model: 32
+      linguistic_features_dim: 4
+      dropout_rate: 0.1
