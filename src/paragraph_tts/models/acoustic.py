@@ -382,6 +382,7 @@ class AcousticModel(pl.LightningModule):
         predicted_spec_length = int(model_output['predicted_durations'].sum().long().item())
         prosody_features_length = int(sample['prosody_features_length'].item())
         phonemes_length = int(sample['input_phonemes_length'].item())
+        words_length = int(sample['input_word_emb_length'].item())
 
         if prosody_features_length == spec_length:
             predicted_prosody_features_length = predicted_spec_length
@@ -404,6 +405,24 @@ class AcousticModel(pl.LightningModule):
             hop_length=256,
             output_path=output_dir.joinpath('spectrograms_predicted_length.svg')
         )
+
+        if 'wsv_weights' in model_output:
+
+            visualization.plot_and_save_matrix(
+                model_output['wsv_weights'][:words_length],
+                'WSV Weights',
+                'Token Index',
+                'Word Index',
+                output_dir.joinpath('wsv_weights.svg')
+            )
+
+        if 'gst_weights' in model_output:
+
+            visualization.plot_and_save_contour(
+                model_output['gst_weights'],
+                'GST Weights',
+                output_dir.joinpath('gst_weights.svg')
+            )
 
         if 'target_pitch' in model_output:
 
