@@ -359,6 +359,14 @@ class AcousticModel(pl.LightningModule):
                                 .joinpath('inference'))
                 )
 
+    def on_validation_epoch_end(self):
+        """Validation epoch end hook."""
+
+        self.log_dict({f'loss_weights/{k}': v
+                       for k, v in self._loss.get_current_loss_weights(self.current_epoch).items()},
+                      on_step=False,
+                      on_epoch=True)
+
     def _visualize_outputs(self,
                            sample: dict[str, torch.Tensor],
                            model_output: dict[str, torch.Tensor],

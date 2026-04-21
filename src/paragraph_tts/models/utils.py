@@ -74,17 +74,25 @@ class AcousticModelLoss(torch.nn.Module):
 
         return {'total_loss': self._calculate_total_loss(losses, epoch), **losses}
 
+    def get_current_loss_weights(self, epoch: int) -> dict[str, float]:
+        """Calculates current loss weights based on initial weights and decay rates."""
+
+        weight_decay_epochs = {loss_name: epoch for loss_name in self._loss_weights}
+
+        if 'wsv_entropy_loss' in self._loss_weights:
+            weight_decay_epochs['wsv_entropy_loss'] = epoch - self._wsv_entropy_loss_start_epoch
+
+        return {loss_name: calc_decayed_loss_weight(self._loss_weights[loss_name],
+                                                    self._loss_weight_decays[loss_name],
+                                                    weight_decay_epochs[loss_name])
+                for loss_name in self._loss_weights}
+
     def _calculate_total_loss(self, losses: dict[str, torch.Tensor], epoch: int) -> torch.Tensor:
         """Calculates total loss as a weighted sum of individual losses."""
 
-        weight_decay_epochs = {loss_name: epoch for loss_name in losses}
+        current_loss_weights = self.get_current_loss_weights(epoch)
 
-        if 'wsv_entropy_loss' in losses:
-            weight_decay_epochs['wsv_entropy_loss'] = epoch - self._wsv_entropy_loss_start_epoch
-
-        return sum(loss * calc_decayed_loss_weight(self._loss_weights[loss_name],
-                                                   self._loss_weight_decays[loss_name],
-                                                   weight_decay_epochs[loss_name])
+        return sum(loss * current_loss_weights[loss_name]
                    for loss_name, loss in losses.items())
 
     def _calculate_variance_adaptor_losses(self,
