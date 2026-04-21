@@ -120,7 +120,6 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
 
         callbacks = [
-            pl_callbacks.DeviceStatsMonitor(cpu_stats=True),
             pl_callbacks.EarlyStopping(
                 monitor='val/mel_loss', min_delta=0.0,
                 patience=3,
@@ -160,8 +159,8 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
             limit_train_batches=None,
             limit_val_batches=None,
             limit_test_batches=None,
-            log_every_n_steps=25,
-            accumulate_grad_batches=train_cfg['accumulate_grad_batches'],
+            log_every_n_steps=100,
+            accumulate_grad_batches=script_cfg.run_cfg['accumulate_grad_batches'],
             gradient_clip_val=train_cfg['gradient_clip_val'],
             enable_model_summary=True
         )

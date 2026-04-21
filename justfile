@@ -34,7 +34,7 @@ setup_mlflow_server:
     #!/usr/bin/env bash
     echo "Setting up MLflow server..."
     source .venv/bin/activate
-    mlflow server --backend-store-uri sqlite:///mlflow_tracking.db --default-artifact-root ./mlflow_artifacts/ --host 0.0.0.0 --port 5000 --workers 1
+    mlflow server --backend-store-uri sqlite:///mlflow_tracking.db --default-artifact-root ./mlflow_artifacts/ --host 0.0.0.0 --port 5000 --workers 1 --cors-allowed-origins "*"
 
 # Run pre-commit hooks on all files.
 run_pre_commit:

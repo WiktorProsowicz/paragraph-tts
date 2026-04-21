@@ -1,25 +1,26 @@
 ---
 run_cfg:
   mlflow_server_uri: http://localhost:5000
-  mlflow_experiment: debug
-  mlflow_run: sample_run
+  mlflow_experiment: finding_baseline
+  mlflow_run: finding_baseline
   seed: 2137
   # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
-  max_epochs: 5
+  max_epochs: 150
   early_stopping_patience: 3
-  ds_path: tmp/librittsr_processed
-  batch_size: 2
+  ds_path: tmp/librittsr_processed-dev
+  batch_size: 8
   save_checkpoints: true
-  num_workers: 4
+  num_workers: 16
   train_val_split: 0.95
+  accumulate_grad_batches: 4
 
 ds_cfg:
   load_prosody_features: true
-  pitch_quantization_params: null
-  energy_quantization_params: null
-  scale_prosody_features: false
-  use_phoneme_level_prosody_features: false
+  pitch_quantization_params: [32, -3.0, 3.0]
+  energy_quantization_params: [32, -3.0, 3.0]
+  scale_prosody_features: true
+  use_phoneme_level_prosody_features: true
   load_context_embeddings: true
 
 train_cfg:
@@ -38,35 +39,34 @@ train_cfg:
     wsv_diversity_loss: 0.97
     wsv_entropy_loss: 1.01
   gradient_clip_val: 0.5
-  accumulate_grad_batches: 4
   stl_bin_init_temperature: 1.0
   stl_bin_temperature_decay: 0.98
   stl_bin_loss_start_epoch: 20
   stl_bin_hard_start_epoch: 120
 
 optimizer_cfg:
-  lr: 1e-3
+  lr: 2e-4
   betas: [0.9, 0.98]
   eps: 1e-8
-  weight_decay: 1e-5
+  weight_decay: 1e-6
   lr_scheduler_gamma: 0.98
 
 model_cfg:
   encoder:
-    hidden_size: 128
+    hidden_size: 384
     phoneme_vocab_size: 74
     pos_tags_vocab_size: 37
     ling_stats_dim: 4
-    input_bert_dim: 128
-    n_att_blocks: 1
+    input_bert_dim: 1024
+    n_att_blocks: 6
     conformer_kernel_size: 9
     att_feature_map_dim: 96
     num_att_heads: 4
     prenet_dropout_rate: 0.2
     blocks_dropout_rate: 0.1
   decoder:
-    hidden_size: 128
-    n_att_blocks: 1
+    hidden_size: 384
+    n_att_blocks: 6
     conformer_kernel_size: 9
     n_mel_channels: 80
     att_feature_map_dim: 96
@@ -74,41 +74,41 @@ model_cfg:
     blocks_dropout_rate: 0.1
     postnet_dropout_rate: 0.1
   context_encoder:
-    input_emb_dim: 128
+    input_emb_dim: 1024
     hidden_size: 768
-    phonemes_hidden_size: 128
-    n_blocks: 1
+    phonemes_hidden_size: 384
+    n_blocks: 4
     cbhg_k_banks: 6
     dropout_rate: 0.1
     num_att_heads: 4
     att_feature_map_dim: 96
   var_adaptor:
-    d_model: 128
+    d_model: 384
     multi_speaker: true
     predictor_n_layers: 2
     predictor_n_int_channels: 128
     predictor_kernel_size: 3
     dropout_rate: 0.1
     spk_emb_dim: 512
-    use_prosody_modelling: 'utterance'
+    use_prosody_modelling: 'phoneme'
   prosody_encoder:
     ref_encoder_cfg:
-      d_model: 32
+      d_model: 384
       n_mel_channels: 80
       conv_filters: [32, 32, 64, 128, 128]
       conv_kernel_size: 3
       conv_stride: [1, 2]
       conv_padding: [1, 1]
-      gru_size: 32
+      gru_size: 384
       dropout_rate: 0.1
     global_stl_cfg:
       n_tokens: 10
-      d_model: 32
+      d_model: 384
     local_stl_cfg:
       n_tokens: 64
-      d_model: 32
+      d_model: 384
     ling_aware_cfg:
       phonemes_vocab_size: 74
-      d_model: 32
+      d_model: 384
       linguistic_features_dim: 4
       dropout_rate: 0.1

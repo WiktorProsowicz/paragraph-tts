@@ -73,9 +73,6 @@ class TrainConfiguration(pydantic.BaseModel):
     gradient_clip_val: Annotated[float, Field(
         description='Gradient clipping value used by trainer.')]
 
-    accumulate_grad_batches: Annotated[int, Field(
-        description='Number of batches to accumulate gradients over.')]
-
     stl_bin_init_temperature: Annotated[float, Field(
         description='Initial temperature for STL binarization in prosody encoder.')]
 
@@ -271,7 +268,7 @@ class AcousticModel(pl.LightningModule):
             mel_length = inputs['input_spec_length']
 
         else:
-            mel_length = var_adaptor_output['predicted_durations'].sum(dim=1).long()
+            mel_length = var_adaptor_output['durations_rounded'].sum(dim=1)
 
         pred_mel_spec = self._decoder(
             var_adaptor_output['output'],
@@ -379,7 +376,7 @@ class AcousticModel(pl.LightningModule):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         spec_length = int(sample['input_spec_length'].item())
-        predicted_spec_length = int(model_output['predicted_durations'].sum().long().item())
+        predicted_spec_length = int(model_output['durations_rounded'].sum().item())
         prosody_features_length = int(sample['prosody_features_length'].item())
         phonemes_length = int(sample['input_phonemes_length'].item())
         words_length = int(sample['input_word_emb_length'].item())
