@@ -159,7 +159,7 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
             limit_train_batches=None,
             limit_val_batches=None,
             limit_test_batches=None,
-            log_every_n_steps=100,
+            log_every_n_steps=25,
             accumulate_grad_batches=script_cfg.run_cfg['accumulate_grad_batches'],
             gradient_clip_val=train_cfg['gradient_clip_val'],
             enable_model_summary=True
