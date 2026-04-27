@@ -69,6 +69,13 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         vocoder=vocoder
     )
 
+    mlflow.set_tracking_uri(script_cfg.run_cfg.mlflow_server_uri)
+    mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
+
+    if _is_global_zero():
+        mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run,
+                         run_id=script_cfg.run_cfg.mlflow_run_id)
+
     mlflow_logger = pl_loggers.MLFlowLogger(
         experiment_name=script_cfg.run_cfg.mlflow_experiment,
         run_name=script_cfg.run_cfg.mlflow_run,
@@ -87,17 +94,12 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
     logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
 
-    callbacks = [
-        pl_callbacks.EarlyStopping(
-            monitor='val/mel_loss', min_delta=0.0,
-            patience=3,
-            mode='min')
-    ]
+    callbacks: list[pl_callbacks.Callback] = []
 
     if script_cfg.run_cfg.save_checkpoints:
         callbacks.append(
             pl_callbacks.ModelCheckpoint(
-                dirpath=f'{mlflow.get_artifact_uri()}/checkpoints',
+                dirpath=os.path.join(mlflow.get_artifact_uri(), 'checkpoints'),
                 monitor='val/mel_loss',
                 mode='min',
                 save_top_k=3,
@@ -139,6 +141,9 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
                 datamodule=data_module,
                 ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint,
                 weights_only=False)
+
+    if _is_global_zero():
+        mlflow.end_run()
 
 
 if __name__ == '__main__':

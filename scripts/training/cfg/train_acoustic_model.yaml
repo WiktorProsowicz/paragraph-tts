@@ -8,7 +8,6 @@ run_cfg:
   # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
   max_epochs: 150
-  early_stopping_patience: 3
   ds_path: tmp/librittsr_processed-dev
   batch_size: 8
   save_checkpoints: true

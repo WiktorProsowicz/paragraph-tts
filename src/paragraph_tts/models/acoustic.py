@@ -342,7 +342,7 @@ class AcousticModel(pl.LightningModule):
                     {k: v[sample_idx].cpu() for k, v in model_output.items()},
                     self._vocoder,
                     save_target_wav=(self.current_epoch == 0),
-                    output_dir=(pathlib.Path(self.logger.save_dir)
+                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
                                 .joinpath('viz')
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
@@ -355,7 +355,8 @@ class AcousticModel(pl.LightningModule):
                     {k: v[sample_idx].cpu() for k, v in model_output_inference.items()},
                     self._vocoder,
                     save_target_wav=False,
-                    output_dir=(pathlib.Path(self.logger.save_dir)
+                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
+                                .joinpath('viz')
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
                                 .joinpath(f'sample_{sample_idx}')
