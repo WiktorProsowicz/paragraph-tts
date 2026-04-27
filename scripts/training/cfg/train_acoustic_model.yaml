@@ -3,6 +3,7 @@ run_cfg:
   mlflow_server_uri: http://localhost:5000
   mlflow_experiment: finding_baseline
   mlflow_run: finding_baseline
+  mlflow_run_id: null
   seed: 2137
   # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:

@@ -262,8 +262,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
                  batch_size: int,
                  num_workers: int,
                  train_val_split: float,
-
-                 ):
+                 seed: int):
 
         super().__init__()
 
@@ -271,6 +270,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
         self._batch_size = batch_size
         self._num_workers = num_workers
         self._train_val_split = train_val_split
+        self._seed = seed
         self._ds_cfg = ds_cfg
 
         self._train_set: ProcessedLibriTTSRDataset | None = None
@@ -281,7 +281,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
         _logger().debug('Setting up dataset...')
 
         all_utterances = list(self._processed_ds_handler.iter_utterances())
-        random.shuffle(all_utterances)
+        random.Random(self._seed).shuffle(all_utterances)
 
         n_train_samples = int(len(all_utterances) * self._train_val_split)
 

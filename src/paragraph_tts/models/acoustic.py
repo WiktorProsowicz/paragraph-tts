@@ -281,6 +281,15 @@ class AcousticModel(pl.LightningModule):
             **prosody_enc_outputs
         }
 
+    def on_fit_start(self):
+        """Fit start hook."""
+
+        if self.trainer.is_global_zero:
+
+            self.logger.log_metrics(
+                {'model_size': sum(p.numel() for p in self.parameters() if p.requires_grad)}
+            )
+
     def training_step(self,  # pylint: disable=arguments-differ
                       batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
@@ -293,12 +302,11 @@ class AcousticModel(pl.LightningModule):
         with torch.no_grad():
             metrics = self._metrics(model_output, batch)
 
-        logged_dict = {f'train/{k}': v.detach().item() for k, v in {**losses, **metrics}.items()}
-
-        self.log_dict(logged_dict,
+        self.log_dict({f'train/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=True,
                       on_epoch=False,
-                      batch_size=batch['input_phonemes_length'].size(0))
+                      batch_size=batch['input_phonemes_length'].size(0),
+                      sync_dist=True)
 
         return losses['total_loss']
 
@@ -313,14 +321,13 @@ class AcousticModel(pl.LightningModule):
         losses = self._loss(model_output, batch, self.current_epoch)
         metrics = self._metrics(model_output, batch)
 
-        logged_dict = {f'val/{k}': v.detach().item() for k, v in {**losses, **metrics}.items()}
-
-        self.log_dict(logged_dict,
+        self.log_dict({f'val/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=False,
                       on_epoch=True,
-                      batch_size=batch['input_phonemes_length'].size(0))
+                      batch_size=batch['input_phonemes_length'].size(0),
+                      sync_dist=True)
 
-        if batch_idx < self._visualize_n_batches:
+        if self.trainer.is_global_zero and batch_idx < self._visualize_n_batches:
 
             model_output_inference = self(batch,
                                           use_teacher_forcing=False)
@@ -335,7 +342,7 @@ class AcousticModel(pl.LightningModule):
                     {k: v[sample_idx].cpu() for k, v in model_output.items()},
                     self._vocoder,
                     save_target_wav=(self.current_epoch == 0),
-                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
+                    output_dir=(pathlib.Path(self.logger.save_dir)
                                 .joinpath('viz')
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
@@ -348,8 +355,7 @@ class AcousticModel(pl.LightningModule):
                     {k: v[sample_idx].cpu() for k, v in model_output_inference.items()},
                     self._vocoder,
                     save_target_wav=False,
-                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
-                                .joinpath('viz')
+                    output_dir=(pathlib.Path(self.logger.save_dir)
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
                                 .joinpath(f'sample_{sample_idx}')
@@ -362,7 +368,8 @@ class AcousticModel(pl.LightningModule):
         self.log_dict({f'loss_weights/{k}': v
                        for k, v in self._loss.get_current_loss_weights(self.current_epoch).items()},
                       on_step=False,
-                      on_epoch=True)
+                      on_epoch=True,
+                      rank_zero_only=True)
 
     def _visualize_outputs(self,
                            sample: dict[str, torch.Tensor],
