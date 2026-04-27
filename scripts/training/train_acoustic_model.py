@@ -62,18 +62,12 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         run_opts={'device': f'cuda:{_get_global_rank()}' if torch.cuda.is_available() else 'cpu'}
     )
 
-    if script_cfg.run_cfg.continue_training_from_checkpoint is None:
-        model = acoustic_model.AcousticModel(
-            model_cfg=acoustic_model.ModelConfiguration.model_validate(model_cfg),
-            optim_cfg=acoustic_model.OptimizerConfiguration.model_validate(optim_cfg),
-            train_cfg=acoustic_model.TrainConfiguration.model_validate(train_cfg),
-            vocoder=vocoder
-        )
-    else:
-        model = acoustic_model.AcousticModel.load_from_checkpoint(
-            script_cfg.run_cfg.continue_training_from_checkpoint,
-            vocoder=vocoder
-        )
+    model = acoustic_model.AcousticModel(
+        model_cfg=acoustic_model.ModelConfiguration.model_validate(model_cfg),
+        optim_cfg=acoustic_model.OptimizerConfiguration.model_validate(optim_cfg),
+        train_cfg=acoustic_model.TrainConfiguration.model_validate(train_cfg),
+        vocoder=vocoder
+    )
 
     mlflow_logger = pl_loggers.MLFlowLogger(
         experiment_name=script_cfg.run_cfg.mlflow_experiment,
@@ -143,7 +137,8 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
 
     trainer.fit(model,
                 datamodule=data_module,
-                ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint)
+                ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint,
+                weights_only=False)
 
 
 if __name__ == '__main__':
