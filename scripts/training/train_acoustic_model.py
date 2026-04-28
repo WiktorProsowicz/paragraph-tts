@@ -66,21 +66,27 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         model_cfg=acoustic_model.ModelConfiguration.model_validate(model_cfg),
         optim_cfg=acoustic_model.OptimizerConfiguration.model_validate(optim_cfg),
         train_cfg=acoustic_model.TrainConfiguration.model_validate(train_cfg),
-        vocoder=vocoder
+        vocoder=vocoder,
+        visualize_n_batches=script_cfg.run_cfg.visualize_n_batches,
+        visualize_n_samples_per_batch=script_cfg.run_cfg.visualize_n_samples_per_batch
     )
 
     mlflow.set_tracking_uri(script_cfg.run_cfg.mlflow_server_uri)
     mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
 
+    run_id = script_cfg.run_cfg.mlflow_run_id
+
     if _is_global_zero():
-        mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run,
-                         run_id=script_cfg.run_cfg.mlflow_run_id)
+        run = mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run,
+                               run_id=script_cfg.run_cfg.mlflow_run_id)
+
+        run_id = run.info.run_id
 
     mlflow_logger = pl_loggers.MLFlowLogger(
         experiment_name=script_cfg.run_cfg.mlflow_experiment,
         run_name=script_cfg.run_cfg.mlflow_run,
         tracking_uri=script_cfg.run_cfg.mlflow_server_uri,
-        run_id=script_cfg.run_cfg.mlflow_run_id)
+        run_id=run_id)
 
     if _is_global_zero():
 

@@ -96,7 +96,9 @@ class AcousticModel(pl.LightningModule):
                  model_cfg: ModelConfiguration,
                  optim_cfg: OptimizerConfiguration,
                  train_cfg: TrainConfiguration,
-                 vocoder: HIFIGAN) -> None:
+                 vocoder: HIFIGAN,
+                 visualize_n_batches: int,
+                 visualize_n_samples_per_batch: int) -> None:
 
         super().__init__()
 
@@ -129,11 +131,13 @@ class AcousticModel(pl.LightningModule):
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
         self._vocoder = vocoder
+        self._visualize_n_batches = visualize_n_batches
+        self._visualize_n_samples_per_batch = visualize_n_samples_per_batch
 
-        self.save_hyperparameters(logger=False, ignore=['vocoder'])
-
-        self._visualize_n_batches = 3
-        self._visualize_n_samples_per_batch = 3
+        self.save_hyperparameters(
+            logger=False,
+            ignore=['vocoder', 'visualize_n_batches', 'visualize_n_samples_per_batch']
+        )
 
         self._loss = model_utils.AcousticModelLoss(
             train_cfg.loss_weights,
@@ -291,7 +295,8 @@ class AcousticModel(pl.LightningModule):
             )
 
     def training_step(self,  # pylint: disable=arguments-differ
-                      batch: dict[str, torch.Tensor]) -> torch.Tensor:
+                      batch: dict[str, torch.Tensor],
+                      batch_idx: int) -> torch.Tensor:
         """Performs training step."""
 
         model_output = self.forward(batch,
@@ -307,6 +312,28 @@ class AcousticModel(pl.LightningModule):
                       on_epoch=False,
                       batch_size=batch['input_phonemes_length'].size(0),
                       sync_dist=True)
+
+        if self.trainer.is_global_zero and batch_idx < self._visualize_n_batches:
+
+            model_output = {k: v.detach() for k, v in model_output.items()}
+
+            for sample_idx in range(min(self._visualize_n_samples_per_batch,
+                                        batch['input_phonemes_length'].size(0))):
+
+                sample = {k: v[sample_idx].cpu() for k, v in batch.items()}
+
+                self._visualize_outputs(
+                    sample,
+                    {k: v[sample_idx].cpu() for k, v in model_output.items()},
+                    self._vocoder,
+                    save_target_wav=True,
+                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
+                                .joinpath('viz')
+                                .joinpath(f'epoch_{self.current_epoch}')
+                                .joinpath(f'batch_{batch_idx}')
+                                .joinpath(f'sample_{sample_idx}')
+                                .joinpath('train_teacher_forcing'))
+                )
 
         return losses['total_loss']
 
@@ -347,7 +374,7 @@ class AcousticModel(pl.LightningModule):
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
                                 .joinpath(f'sample_{sample_idx}')
-                                .joinpath('teacher_forcing'))
+                                .joinpath('val_teacher_forcing'))
                 )
 
                 self._visualize_outputs(
@@ -360,7 +387,7 @@ class AcousticModel(pl.LightningModule):
                                 .joinpath(f'epoch_{self.current_epoch}')
                                 .joinpath(f'batch_{batch_idx}')
                                 .joinpath(f'sample_{sample_idx}')
-                                .joinpath('inference'))
+                                .joinpath('val_inference'))
                 )
 
     def on_validation_epoch_end(self):

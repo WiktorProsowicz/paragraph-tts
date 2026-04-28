@@ -1,19 +1,21 @@
 ---
 run_cfg:
   mlflow_server_uri: http://localhost:5000
-  mlflow_experiment: finding_baseline
-  mlflow_run: finding_baseline
+  mlflow_experiment: debug
+  mlflow_run: debug
   mlflow_run_id: null
   seed: 2137
   # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
-  max_epochs: 150
-  ds_path: tmp/librittsr_processed-dev
+  max_epochs: 2
+  ds_path: tmp/librittsr_processed
   batch_size: 8
   save_checkpoints: true
   num_workers: 16
   train_val_split: 0.95
   accumulate_grad_batches: 4
+  visualize_n_batches: 3
+  visualize_n_samples_per_batch: 3
 
 ds_cfg:
   load_prosody_features: true
@@ -57,7 +59,7 @@ model_cfg:
     phoneme_vocab_size: 74
     pos_tags_vocab_size: 37
     ling_stats_dim: 4
-    input_bert_dim: 1024
+    input_bert_dim: 128
     n_att_blocks: 6
     conformer_kernel_size: 9
     att_feature_map_dim: 96
@@ -74,7 +76,7 @@ model_cfg:
     blocks_dropout_rate: 0.1
     postnet_dropout_rate: 0.1
   context_encoder:
-    input_emb_dim: 1024
+    input_emb_dim: 128
     hidden_size: 768
     phonemes_hidden_size: 384
     n_blocks: 4
