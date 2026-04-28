@@ -320,28 +320,6 @@ class AcousticModel(pl.LightningModule):
                       batch_size=batch['input_phonemes_length'].size(0),
                       sync_dist=True)
 
-        if self.trainer.is_global_zero and batch_idx < self._visualize_n_batches:
-
-            model_output = {k: v.detach() for k, v in model_output.items()}
-
-            for sample_idx in range(min(self._visualize_n_samples_per_batch,
-                                        batch['input_phonemes_length'].size(0))):
-
-                sample = {k: v[sample_idx].cpu() for k, v in batch.items()}
-
-                self._visualize_outputs(
-                    sample,
-                    {k: v[sample_idx].cpu() for k, v in model_output.items()},
-                    self._vocoder,
-                    save_target_wav=True,
-                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
-                                .joinpath('viz')
-                                .joinpath(f'epoch_{self.current_epoch}')
-                                .joinpath(f'batch_{batch_idx}')
-                                .joinpath(f'sample_{sample_idx}')
-                                .joinpath('train_teacher_forcing'))
-                )
-
         return losses['total_loss']
 
     def validation_step(self,  # pylint: disable=arguments-differ
