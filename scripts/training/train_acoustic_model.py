@@ -5,6 +5,7 @@ The script supports logging MLFlow experiment parameters and saves checkpoints.
 import logging
 import os
 import pathlib
+import sys
 
 import hydra
 import mlflow
@@ -65,15 +66,32 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     )
 
     mlflow.set_tracking_uri(script_cfg.run_cfg.mlflow_server_uri)
-    mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
+    experiment = mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
 
-    run_id = script_cfg.run_cfg.mlflow_run_id
+    mlflow_client = mlflow.tracking.MlflowClient(mlflow.get_tracking_uri())
 
-    if _is_global_zero():
-        run = mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run,
-                               run_id=script_cfg.run_cfg.mlflow_run_id)
+    runs = mlflow_client.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=f"tags.mlflow.runName = '{script_cfg.run_cfg.mlflow_run}'",
+        max_results=1
+    )
 
+    if runs:
+        run_id = runs[0].info.run_id
+
+        if _is_global_zero():
+            mlflow.start_run(run_id=run_id,
+                             run_name=script_cfg.run_cfg.mlflow_run)
+
+    elif _is_global_zero():
+        run = mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run)
         run_id = run.info.run_id
+
+    else:
+        _logger().critical('No existing MLFlow run found with name "%s" in experiment "%s".',
+                           script_cfg.run_cfg.mlflow_run,
+                           script_cfg.run_cfg.mlflow_experiment)
+        sys.exit(1)
 
     mlflow_logger = pl_loggers.MLFlowLogger(
         experiment_name=script_cfg.run_cfg.mlflow_experiment,
