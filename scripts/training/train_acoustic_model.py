@@ -13,7 +13,6 @@ import omegaconf
 from lightning.pytorch import callbacks as pl_callbacks
 from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch import profilers as pl_profilers
-from speechbrain.inference.vocoders import HIFIGAN
 import torch
 
 from paragraph_tts.data.loading import processed_librittsr as data_loading
@@ -57,16 +56,10 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         seed=script_cfg.run_cfg.seed,
     )
 
-    vocoder = HIFIGAN.from_hparams(
-        source='speechbrain/tts-hifigan-libritts-22050Hz',
-        run_opts={'device': f'cuda:{_get_global_rank()}' if torch.cuda.is_available() else 'cpu'}
-    )
-
     model = acoustic_model.AcousticModel(
         model_cfg=acoustic_model.ModelConfiguration.model_validate(model_cfg),
         optim_cfg=acoustic_model.OptimizerConfiguration.model_validate(optim_cfg),
         train_cfg=acoustic_model.TrainConfiguration.model_validate(train_cfg),
-        vocoder=vocoder,
         visualize_n_batches=script_cfg.run_cfg.visualize_n_batches,
         visualize_n_samples_per_batch=script_cfg.run_cfg.visualize_n_samples_per_batch
     )

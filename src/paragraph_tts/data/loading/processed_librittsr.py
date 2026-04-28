@@ -8,8 +8,10 @@ from typing import Tuple
 from typing import Annotated
 import pickle
 
+import numpy as np
 import lightning.pytorch as pl
 import torch
+import torch.utils.data.distributed
 import pydantic
 from pydantic import Field
 
@@ -281,7 +283,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
         _logger().debug('Setting up dataset...')
 
         all_utterances = list(self._processed_ds_handler.iter_utterances())
-        random.Random(self._seed).shuffle(all_utterances)
+        np.random.RandomState(self._seed).shuffle(all_utterances)
 
         n_train_samples = int(len(all_utterances) * self._train_val_split)
 
@@ -297,19 +299,47 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._train_set is not None, 'Make sure to call setup() before using this method!'
 
-        return torch.utils.data.DataLoader(self._train_set,
-                                           batch_size=self._batch_size,
-                                           shuffle=True,
-                                           num_workers=self._num_workers,
-                                           pin_memory=True,
-                                           collate_fn=self._train_set.collate_fn)
+        # Create DistributedSampler for multi-GPU training
+        sampler = None
+        if self.trainer is not None and self.trainer.world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                self._train_set,
+                num_replicas=self.trainer.world_size,
+                rank=self.trainer.global_rank,
+                shuffle=True,
+                seed=self._seed,
+                drop_last=True
+            )
+
+        return torch.utils.data.DataLoader(
+            self._train_set,
+            batch_size=self._batch_size,
+            sampler=sampler,
+            shuffle=(sampler is None),
+            num_workers=self._num_workers,
+            pin_memory=True,
+            collate_fn=self._train_set.collate_fn)
 
     def val_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._val_set is not None, 'Make sure to call setup() before using this method!'
 
-        return torch.utils.data.DataLoader(self._val_set,
-                                           batch_size=self._batch_size,
-                                           shuffle=False,
-                                           num_workers=self._num_workers,
-                                           pin_memory=True,
-                                           collate_fn=self._val_set.collate_fn)
+        # Create DistributedSampler for multi-GPU validation
+        sampler = None
+        if self.trainer is not None and self.trainer.world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                self._val_set,
+                num_replicas=self.trainer.world_size,
+                rank=self.trainer.global_rank,
+                shuffle=False,
+                seed=self._seed,
+                drop_last=True
+            )
+
+        return torch.utils.data.DataLoader(
+            self._val_set,
+            batch_size=self._batch_size,
+            sampler=sampler,
+            shuffle=False,
+            num_workers=self._num_workers,
+            pin_memory=True,
+            collate_fn=self._val_set.collate_fn)

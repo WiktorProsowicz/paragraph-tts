@@ -96,7 +96,6 @@ class AcousticModel(pl.LightningModule):
                  model_cfg: ModelConfiguration,
                  optim_cfg: OptimizerConfiguration,
                  train_cfg: TrainConfiguration,
-                 vocoder: HIFIGAN,
                  visualize_n_batches: int,
                  visualize_n_samples_per_batch: int) -> None:
 
@@ -130,13 +129,13 @@ class AcousticModel(pl.LightningModule):
         self._model_cfg = model_cfg
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
-        self._vocoder = vocoder
+        self._vocoder: HIFIGAN | None = None
         self._visualize_n_batches = visualize_n_batches
         self._visualize_n_samples_per_batch = visualize_n_samples_per_batch
 
         self.save_hyperparameters(
             logger=False,
-            ignore=['vocoder', 'visualize_n_batches', 'visualize_n_samples_per_batch']
+            ignore=['visualize_n_batches', 'visualize_n_samples_per_batch']
         )
 
         self._loss = model_utils.AcousticModelLoss(
@@ -289,6 +288,14 @@ class AcousticModel(pl.LightningModule):
         """Fit start hook."""
 
         if self.trainer.is_global_zero:
+
+            self._vocoder = HIFIGAN.from_hparams(
+                source='speechbrain/tts-hifigan-libritts-22050Hz',
+                run_opts={'device': str(self.device)}
+            )
+            self._vocoder.eval()
+            for param in self._vocoder.parameters():
+                param.requires_grad = False
 
             self.logger.log_metrics(
                 {'model_size': sum(p.numel() for p in self.parameters() if p.requires_grad)}
