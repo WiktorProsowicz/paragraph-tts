@@ -132,6 +132,7 @@ class AcousticModel(pl.LightningModule):
         self._vocoder: HIFIGAN | None = None
         self._visualize_n_batches = visualize_n_batches
         self._visualize_n_samples_per_batch = visualize_n_samples_per_batch
+        self.strict_loading = False
 
         self.save_hyperparameters(
             logger=False,

@@ -66,101 +66,76 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
     )
 
     mlflow.set_tracking_uri(script_cfg.run_cfg.mlflow_server_uri)
-    experiment = mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
+    mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
 
-    mlflow_client = mlflow.tracking.MlflowClient(mlflow.get_tracking_uri())
+    with mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run,
+                          run_id=script_cfg.run_cfg.mlflow_run_id) as run:
 
-    runs = mlflow_client.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        filter_string=f"tags.mlflow.runName = '{script_cfg.run_cfg.mlflow_run}'",
-        max_results=1
-    )
-
-    if runs:
-        run_id = runs[0].info.run_id
+        mlflow_logger = pl_loggers.MLFlowLogger(
+            experiment_name=script_cfg.run_cfg.mlflow_experiment,
+            run_name=script_cfg.run_cfg.mlflow_run,
+            tracking_uri=script_cfg.run_cfg.mlflow_server_uri,
+            run_id=run.info.run_id)
 
         if _is_global_zero():
-            mlflow.start_run(run_id=run_id,
-                             run_name=script_cfg.run_cfg.mlflow_run)
 
-    elif _is_global_zero():
-        run = mlflow.start_run(run_name=script_cfg.run_cfg.mlflow_run)
-        run_id = run.info.run_id
+            mlflow_logger.log_hyperparams({
+                'model_cfg': model_cfg,
+                'train_cfg': train_cfg,
+                'optim_cfg': optim_cfg,
+                'ds_cfg': ds_cfg
+            })
 
-    else:
-        _logger().critical('No existing MLFlow run found with name "%s" in experiment "%s".',
-                           script_cfg.run_cfg.mlflow_run,
-                           script_cfg.run_cfg.mlflow_experiment)
-        sys.exit(1)
+        _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
+        logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
 
-    mlflow_logger = pl_loggers.MLFlowLogger(
-        experiment_name=script_cfg.run_cfg.mlflow_experiment,
-        run_name=script_cfg.run_cfg.mlflow_run,
-        tracking_uri=script_cfg.run_cfg.mlflow_server_uri,
-        run_id=run_id)
+        callbacks: list[pl_callbacks.Callback] = []
 
-    if _is_global_zero():
+        if script_cfg.run_cfg.save_checkpoints:
+            callbacks.append(
+                pl_callbacks.ModelCheckpoint(
+                    dirpath=os.path.join(mlflow.get_artifact_uri(), 'checkpoints'),
+                    monitor='epoch',
+                    mode='max',
+                    save_top_k=5,
+                    every_n_epochs=1)
+            )
 
-        mlflow_logger.log_hyperparams({
-            'model_cfg': model_cfg,
-            'train_cfg': train_cfg,
-            'optim_cfg': optim_cfg,
-            'ds_cfg': ds_cfg
-        })
-
-    _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
-    logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
-
-    callbacks: list[pl_callbacks.Callback] = []
-
-    if script_cfg.run_cfg.save_checkpoints:
-        callbacks.append(
-            pl_callbacks.ModelCheckpoint(
-                dirpath=os.path.join(mlflow.get_artifact_uri(), 'checkpoints'),
-                monitor='val/mel_loss',
-                mode='min',
-                save_top_k=3,
-                every_n_epochs=1)
+        trainer = pl.Trainer(
+            accelerator='auto',
+            devices='auto',
+            max_epochs=script_cfg.run_cfg.max_epochs,
+            logger=mlflow_logger,
+            callbacks=callbacks,
+            num_sanity_val_steps=0,
+            # profiler=pl_profilers.PyTorchProfiler(
+            #     dirpath=os.path.join(mlflow.get_artifact_uri(),
+            #                          'torch_profiler'),
+            #     filename=f'profile_{run.info.run_id}',
+            #     row_limit=-1,
+            #     profiler_kwargs={
+            #         'with_stack': True,
+            #         'with_modules': True,
+            #         'profile_memory': True,
+            #     }
+            # ),
+            enable_checkpointing=script_cfg.run_cfg.save_checkpoints,
+            check_val_every_n_epoch=1,
+            limit_train_batches=None,
+            limit_val_batches=None,
+            limit_test_batches=None,
+            log_every_n_steps=25,
+            accumulate_grad_batches=script_cfg.run_cfg['accumulate_grad_batches'],
+            gradient_clip_val=train_cfg['gradient_clip_val'],
+            enable_model_summary=True
         )
 
-    trainer = pl.Trainer(
-        accelerator='auto',
-        devices='auto',
-        max_epochs=script_cfg.run_cfg.max_epochs,
-        logger=mlflow_logger,
-        callbacks=callbacks,
-        num_sanity_val_steps=0,
-        # profiler=pl_profilers.PyTorchProfiler(
-        #     dirpath=os.path.join(mlflow.get_artifact_uri(),
-        #                          'torch_profiler'),
-        #     filename=f'profile_{run.info.run_id}',
-        #     row_limit=-1,
-        #     profiler_kwargs={
-        #         'with_stack': True,
-        #         'with_modules': True,
-        #         'profile_memory': True,
-        #     }
-        # ),
-        enable_checkpointing=script_cfg.run_cfg.save_checkpoints,
-        check_val_every_n_epoch=1,
-        limit_train_batches=None,
-        limit_val_batches=None,
-        limit_test_batches=None,
-        log_every_n_steps=25,
-        accumulate_grad_batches=script_cfg.run_cfg['accumulate_grad_batches'],
-        gradient_clip_val=train_cfg['gradient_clip_val'],
-        enable_model_summary=True
-    )
+        _logger().info('Starting training...')
 
-    _logger().info('Starting training...')
-
-    trainer.fit(model,
-                datamodule=data_module,
-                ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint,
-                weights_only=False)
-
-    if _is_global_zero():
-        mlflow.end_run()
+        trainer.fit(model,
+                    datamodule=data_module,
+                    ckpt_path=script_cfg.run_cfg.continue_training_from_checkpoint,
+                    weights_only=False)
 
 
 if __name__ == '__main__':
