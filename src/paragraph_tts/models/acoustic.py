@@ -1,23 +1,22 @@
 """Contains definition of acoustic model training/inference pipelines."""
 import logging
 import pathlib
-from typing import Annotated
+from typing import Annotated, Callable
+import itertools
 
 import mlflow
 import lightning.pytorch as pl
 import pydantic
 import torch
 from comp_trans_tts.model import modules as ctt_modules
-from torch_dev_utils.tts import visualization
 from pydantic import Field
 from speechbrain.inference.vocoders import HIFIGAN
-import soundfile
 
 from paragraph_tts.layers.acoustic import encoder as acoustic_encoder
 from paragraph_tts.layers.acoustic import decoder as acoustic_decoder
 from paragraph_tts.layers.acoustic import context_encoder as acoustic_context_encoder
 from paragraph_tts.models import utils as model_utils
-from paragraph_tts.utils import inference as inference_utils
+from paragraph_tts.utils import visualization
 
 
 def _logger() -> logging.Logger:
@@ -48,17 +47,23 @@ class ModelConfiguration(pydantic.BaseModel):
 class OptimizerConfiguration(pydantic.BaseModel):
     """Optimizer parameters."""
 
-    lr: Annotated[float, Field(description='Learning rate.')]
+    base_lr: Annotated[float, Field(description='Learning rate for base parameters.')]
+
+    prosody_enc_lr: Annotated[float, Field(
+        description='Learning rate for prosody encoder parameters.')]
 
     betas: Annotated[tuple[float, float], Field(
         description='Adam beta coefficients.')]
 
     eps: Annotated[float, Field(description='Adam epsilon value.')]
 
-    weight_decay: Annotated[float, Field(description='Weight decay coefficient.')]
+    base_weight_decay: Annotated[float, Field(description='Weight decay for base parameters.')]
+
+    prosody_enc_weight_decay: Annotated[float, Field(
+        description='Weight decay for prosody encoder parameters.')]
 
     lr_scheduler_gamma: Annotated[float, Field(
-        description='Exponential decay factor of learning rate scheduler.')]
+        description='Exponential decay factor of LR scheduler.')]
 
 
 class TrainConfiguration(pydantic.BaseModel):
@@ -70,20 +75,26 @@ class TrainConfiguration(pydantic.BaseModel):
     loss_weight_decays: Annotated[dict[str, float], Field(
         description='Decay factors for loss weights.')]
 
-    gradient_clip_val: Annotated[float, Field(
-        description='Gradient clipping value used by trainer.')]
+    wsv_bin_init_temperature: Annotated[float, Field(
+        description='Initial temperature for WSV binarization in prosody encoder.')]
 
-    stl_bin_init_temperature: Annotated[float, Field(
-        description='Initial temperature for STL binarization in prosody encoder.')]
+    gst_bin_init_temperature: Annotated[float, Field(
+        description='Initial temperature for GST binarization in prosody encoder.')]
 
-    stl_bin_temperature_decay: Annotated[float, Field(
-        description='Decay factor for temperature of STL binarization in prosody encoder.')]
+    wsv_bin_temperature_decay: Annotated[float, Field(
+        description='Decay factor for temperature of WSV binarization in prosody encoder.')]
 
-    stl_bin_loss_start_epoch: Annotated[int, Field(
+    gst_bin_temperature_decay: Annotated[float, Field(
+        description='Decay factor for temperature of GST binarization in prosody encoder.')]
+
+    wsv_bin_loss_start_epoch: Annotated[int, Field(
         description='Epoch to start applying binarization loss for prosody encoder.')]
 
-    stl_bin_hard_start_epoch: Annotated[int, Field(
-        description='Epoch to start using hard binarization in prosody encoder.')]
+    wsv_bin_hard_start_epoch: Annotated[int, Field(
+        description='Epoch to start using hard binarization for WSV in prosody encoder.')]
+
+    gst_bin_loss_start_epoch: Annotated[int, Field(
+        description='Epoch to start applying binarization loss for GST in prosody encoder.')]
 
 
 class AcousticModel(pl.LightningModule):
@@ -129,7 +140,7 @@ class AcousticModel(pl.LightningModule):
         self._model_cfg = model_cfg
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
-        self._vocoder: HIFIGAN | None = None
+        self._vocoder: Callable[[], HIFIGAN] | None = None
         self._visualize_n_batches = visualize_n_batches
         self._visualize_n_samples_per_batch = visualize_n_samples_per_batch
         self.strict_loading = False
@@ -142,106 +153,158 @@ class AcousticModel(pl.LightningModule):
         self._loss = model_utils.AcousticModelLoss(
             train_cfg.loss_weights,
             train_cfg.loss_weight_decays,
-            train_cfg.stl_bin_loss_start_epoch
+            train_cfg.wsv_bin_loss_start_epoch,
+            train_cfg.gst_bin_loss_start_epoch
+
         )
         self._metrics = model_utils.AcousticModelMetrics()
 
     def configure_optimizers(self):  # type: ignore
         """Sets up optimizer from config."""
 
-        opt = torch.optim.AdamW(
-            self.parameters(),
-            lr=self._optim_cfg.lr,
+        param_groups = [{
+            'params': itertools.chain(
+                self._encoder.parameters(),
+                self._decoder.parameters(),
+                self._var_adaptor.parameters(),
+                *[self._context_encoder.parameters()] if self._context_encoder is not None else [],
+            ),
+            'lr': self._optim_cfg.base_lr,
+            'weight_decay': self._optim_cfg.base_weight_decay
+        }]
+
+        if self._prosody_encoder is not None:
+
+            param_groups.append({
+                'params': self._prosody_encoder.parameters(),
+                'lr': self._optim_cfg.prosody_enc_lr,
+                'weight_decay': self._optim_cfg.prosody_enc_weight_decay
+            })
+
+        base_opt = torch.optim.AdamW(
+            param_groups,
             betas=self._optim_cfg.betas,
             eps=self._optim_cfg.eps,
-            weight_decay=self._optim_cfg.weight_decay
         )
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            opt, gamma=self._optim_cfg.lr_scheduler_gamma
+            base_opt, gamma=self._optim_cfg.lr_scheduler_gamma
         )
 
         return {
-            'optimizer': opt,
-            'lr_scheduler': scheduler
+            'optimizer': base_opt,
+            'lr_scheduler': scheduler,
         }
 
     def forward(self,  # pylint: disable=arguments-differ
                 inputs: dict[str, torch.Tensor],
-                use_teacher_forcing: bool
+                use_teacher_forcing: bool,
+                wsv_bin_params: ctt_modules.StlBinarizationParams | None,
+                gst_bin_params: ctt_modules.StlBinarizationParams | None
                 ) -> dict[str, torch.Tensor]:
         """Performs forward pass of the model."""
 
-        enc_output = self._encoder(
-            inputs['input_phoneme_ids'],
-            inputs['input_pos_tags'],
-            inputs['input_ling_stats'],
-            inputs['input_word_emb'],
-            inputs['word_to_phoneme_indices'],
-            inputs['sentence_pos'],
-            inputs['spk_rate'],
-            inputs['input_phonemes_length']
-        )
-
-        if self._context_encoder is not None:
-
-            context_output = self._context_encoder(
-                inputs['context_token_emb'],
-                inputs['context_tokens_length'],
-                inputs['context_pse'],
-                inputs['context_pse_length'],
-                enc_output,
-                inputs['input_phonemes_length']
-            )
-
-            enc_output = enc_output + context_output
+        enc_output = self._obtain_encoder_outputs(inputs)
 
         prosody_enc_outputs: dict[str, torch.Tensor] = {}
 
         if self._prosody_encoder is not None:
 
-            if self.current_epoch < self._train_cfg.stl_bin_hard_start_epoch:
-                bin_params = ctt_modules.StlBinarizationParams(
-                    hard=False,
-                    temperature=model_utils.calc_decayed_loss_weight(
-                        self._train_cfg.stl_bin_init_temperature,
-                        self._train_cfg.stl_bin_temperature_decay,
-                        self.current_epoch
-                    )
+            assert wsv_bin_params is not None
+
+            prosody_enc_outputs, enc_output = self._obtain_prosody_encoder_outputs(inputs,
+                                                                                   enc_output,
+                                                                                   wsv_bin_params,
+                                                                                   gst_bin_params)
+
+        dec_outputs = self._obtain_decoder_outputs(inputs, use_teacher_forcing, enc_output)
+
+        return {**dec_outputs,
+                **prosody_enc_outputs}
+
+    def _obtain_prosody_encoder_outputs(self,
+                                        inputs: dict[str, torch.Tensor],
+                                        enc_output: torch.Tensor,
+                                        wsv_bin_params: ctt_modules.StlBinarizationParams,
+                                        gst_bin_params: ctt_modules.StlBinarizationParams
+                                        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+        """Calculates outputs of hierarchical prosody encoder."""
+
+        ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
+            spectrogram=inputs['input_spec'],
+            spectrogram_length=inputs['input_spec_length'],
+            spec_word_pool_matrix=inputs['spec_to_word_pool_matrix'],
+            phoneme_ids=inputs['input_phoneme_ids'],
+            linguistic_features=inputs['input_ling_stats'],
+            phoneme_spec_indices=inputs['phone_to_spec_indices'],
+            local_stl_binarization_params=wsv_bin_params,
+            global_stl_binarization_params=gst_bin_params
+        )
+
+        outputs = {
+            'gst_weights': gst_weights,
+            'wsv_weights': wsv_weights,
+            'gst_emb': gst_emb,
+            'wsv_emb': wsv_emb
+        }
+
+        gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
+        wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
+                          inputs['word_to_phoneme_indices']]
+
+        if wsv_bin_params.hard:
+            gst_emb = gst_emb.detach()
+            wsv_emb = wsv_emb.detach()
+            gst_weights = gst_weights.detach()
+            wsv_weights = wsv_weights.detach()
+
+        return outputs, enc_output + gst_emb + wsv_emb
+
+    def _obtain_wsv_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
+        """Calculates current binarization parameters for WSV in hierarchical prosody encoder."""
+
+        if self._prosody_encoder is None:
+            return None
+
+        if self.current_epoch < self._train_cfg.wsv_bin_hard_start_epoch:
+            return ctt_modules.StlBinarizationParams(
+                hard=False,
+                temperature=model_utils.calc_decayed_loss_weight(
+                    self._train_cfg.wsv_bin_init_temperature,
+                    self._train_cfg.wsv_bin_temperature_decay,
+                    self.current_epoch
                 )
-            else:
-                bin_params = ctt_modules.StlBinarizationParams(
-                    hard=True,
-                    temperature=model_utils.calc_decayed_loss_weight(
-                        self._train_cfg.stl_bin_init_temperature,
-                        self._train_cfg.stl_bin_temperature_decay,
-                        self._train_cfg.stl_bin_hard_start_epoch
-                    )
-                )
+            )
 
-            ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
-                spectrogram=inputs['input_spec'],
-                spectrogram_length=inputs['input_spec_length'],
-                spec_word_pool_matrix=inputs['spec_to_word_pool_matrix'],
-                phoneme_ids=inputs['input_phoneme_ids'],
-                linguistic_features=inputs['input_ling_stats'],
-                phoneme_spec_indices=inputs['phone_to_spec_indices'],
-                local_stl_binarization_params=bin_params)
+        return ctt_modules.StlBinarizationParams(
+            hard=True,
+            temperature=model_utils.calc_decayed_loss_weight(
+                self._train_cfg.wsv_bin_init_temperature,
+                self._train_cfg.wsv_bin_temperature_decay,
+                self._train_cfg.wsv_bin_hard_start_epoch
+            )
+        )
 
-            gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
-            wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
-                              inputs['word_to_phoneme_indices']]
+    def _obtain_gst_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
+        """Calculates current binarization parameters for GST in hierarchical prosody encoder."""
 
-            if bin_params.hard:
-                gst_emb = gst_emb.detach()
-                wsv_emb = wsv_emb.detach()
-                gst_weights = gst_weights.detach()
-                wsv_weights = wsv_weights.detach()
+        if self._prosody_encoder is None:
+            return None
 
-            prosody_enc_outputs['gst_weights'] = gst_weights
-            prosody_enc_outputs['wsv_weights'] = wsv_weights
+        return ctt_modules.StlBinarizationParams(
+            hard=False,
+            temperature=model_utils.calc_decayed_loss_weight(
+                self._train_cfg.gst_bin_init_temperature,
+                self._train_cfg.gst_bin_temperature_decay,
+                self.current_epoch
+            )
+        )
 
-            enc_output = enc_output + gst_emb + wsv_emb
+    def _obtain_decoder_outputs(self,
+                                inputs: dict[str, torch.Tensor],
+                                use_teacher_forcing: bool,
+                                enc_output: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Calculates decoder outputs (mel-spectrogram and intermediate representations)."""
 
         forced_args: dict[str, torch.Tensor | None] = {
             'explicit_durations': None,
@@ -281,34 +344,63 @@ class AcousticModel(pl.LightningModule):
 
         return {
             'pred_mel_spec': pred_mel_spec,
-            **var_adaptor_output,
-            **prosody_enc_outputs
+            **var_adaptor_output
         }
+
+    def _obtain_encoder_outputs(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Calculates encoder outputs from input textual features."""
+
+        enc_output = self._encoder(
+            inputs['input_phoneme_ids'],
+            inputs['input_pos_tags'],
+            inputs['input_ling_stats'],
+            inputs['input_word_emb'],
+            inputs['word_to_phoneme_indices'],
+            inputs['sentence_pos'],
+            inputs['spk_rate'],
+            inputs['input_phonemes_length']
+        )
+
+        if self._context_encoder is not None:
+
+            context_output = self._context_encoder(
+                inputs['context_token_emb'],
+                inputs['context_tokens_length'],
+                inputs['context_pse'],
+                inputs['context_pse_length'],
+                enc_output,
+                inputs['input_phonemes_length']
+            )
+
+            enc_output = enc_output + context_output
+
+        return enc_output
 
     def on_fit_start(self):
         """Fit start hook."""
 
-        if self.trainer.is_global_zero:
+        self.logger.log_metrics(
+            {'model_size': sum(p.numel() for p in self.parameters() if p.requires_grad)}
+        )
 
-            self._vocoder = HIFIGAN.from_hparams(
-                source='speechbrain/tts-hifigan-libritts-22050Hz',
-                run_opts={'device': str(self.device)}
-            )
-            self._vocoder.eval()
-            for param in self._vocoder.parameters():
-                param.requires_grad = False
+        vocoder: torch.nn.Module = HIFIGAN.from_hparams(
+            source='speechbrain/tts-hifigan-libritts-22050Hz',
+            run_opts={'device': str(self.device)}
+        )
+        vocoder.eval()
+        for param in vocoder.parameters():
+            param.requires_grad = False
 
-            self.logger.log_metrics(
-                {'model_size': sum(p.numel() for p in self.parameters() if p.requires_grad)}
-            )
+        self._vocoder = lambda: vocoder
 
     def training_step(self,  # pylint: disable=arguments-differ
-                      batch: dict[str, torch.Tensor],
-                      batch_idx: int) -> torch.Tensor:
+                      batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
 
         model_output = self.forward(batch,
-                                    use_teacher_forcing=True)
+                                    use_teacher_forcing=True,
+                                    wsv_bin_params=self._obtain_wsv_binarization_params(),
+                                    gst_bin_params=self._obtain_gst_binarization_params())
 
         losses = self._loss(model_output, batch, self.current_epoch)
 
@@ -318,8 +410,7 @@ class AcousticModel(pl.LightningModule):
         self.log_dict({f'train/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=True,
                       on_epoch=False,
-                      batch_size=batch['input_phonemes_length'].size(0),
-                      sync_dist=True)
+                      batch_size=batch['input_phonemes_length'].size(0))
 
         return losses['total_loss']
 
@@ -329,7 +420,9 @@ class AcousticModel(pl.LightningModule):
         """Performs validation step."""
 
         model_output = self(batch,
-                            use_teacher_forcing=True)
+                            use_teacher_forcing=True,
+                            wsv_bin_params=self._obtain_wsv_binarization_params(),
+                            gst_bin_params=self._obtain_gst_binarization_params())
 
         losses = self._loss(model_output, batch, self.current_epoch)
         metrics = self._metrics(model_output, batch)
@@ -337,23 +430,24 @@ class AcousticModel(pl.LightningModule):
         self.log_dict({f'val/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=False,
                       on_epoch=True,
-                      batch_size=batch['input_phonemes_length'].size(0),
-                      sync_dist=True)
+                      batch_size=batch['input_phonemes_length'].size(0))
 
-        if self.trainer.is_global_zero and batch_idx < self._visualize_n_batches:
+        if batch_idx < self._visualize_n_batches:
 
             model_output_inference = self(batch,
-                                          use_teacher_forcing=False)
+                                          use_teacher_forcing=False,
+                                          wsv_bin_params=self._obtain_wsv_binarization_params(),
+                                          gst_bin_params=self._obtain_gst_binarization_params())
 
             for sample_idx in range(min(self._visualize_n_samples_per_batch,
                                         batch['input_phonemes_length'].size(0))):
 
                 sample = {k: v[sample_idx].cpu() for k, v in batch.items()}
 
-                self._visualize_outputs(
+                visualization.visualize_acoustic_model_outputs(
                     sample,
                     {k: v[sample_idx].cpu() for k, v in model_output.items()},
-                    self._vocoder,
+                    self._vocoder(),
                     save_target_wav=(self.current_epoch == 0),
                     output_dir=(pathlib.Path(mlflow.get_artifact_uri())
                                 .joinpath('viz')
@@ -363,10 +457,10 @@ class AcousticModel(pl.LightningModule):
                                 .joinpath('val_teacher_forcing'))
                 )
 
-                self._visualize_outputs(
+                visualization.visualize_acoustic_model_outputs(
                     sample,
                     {k: v[sample_idx].cpu() for k, v in model_output_inference.items()},
-                    self._vocoder,
+                    self._vocoder(),
                     save_target_wav=False,
                     output_dir=(pathlib.Path(mlflow.get_artifact_uri())
                                 .joinpath('viz')
@@ -382,126 +476,4 @@ class AcousticModel(pl.LightningModule):
         self.log_dict({f'loss_weights/{k}': v
                        for k, v in self._loss.get_current_loss_weights(self.current_epoch).items()},
                       on_step=False,
-                      on_epoch=True,
-                      rank_zero_only=True)
-
-    def _visualize_outputs(self,
-                           sample: dict[str, torch.Tensor],
-                           model_output: dict[str, torch.Tensor],
-                           hifi_gan: HIFIGAN,
-                           save_target_wav: bool,
-                           output_dir: pathlib.Path) -> None:
-        """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
-
-        _logger().debug('Visualizing and saving outputs to %s.', output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        spec_length = int(sample['input_spec_length'].item())
-        predicted_spec_length = int(model_output['durations_rounded'].sum().item())
-        prosody_features_length = int(sample['prosody_features_length'].item())
-        phonemes_length = int(sample['input_phonemes_length'].item())
-        words_length = int(sample['input_word_emb_length'].item())
-
-        if prosody_features_length == spec_length:
-            predicted_prosody_features_length = predicted_spec_length
-
-        else:
-            predicted_prosody_features_length = phonemes_length
-
-        visualization.plot_and_save_spectrograms(
-            model_output['pred_mel_spec'][:, :spec_length].numpy(),
-            sample['input_spec'][:, :spec_length].numpy(),
-            sr=22050,
-            hop_length=256,
-            output_path=output_dir.joinpath('spectrograms_target_length.svg')
-        )
-
-        visualization.plot_and_save_spectrograms(
-            model_output['pred_mel_spec'][:, :predicted_spec_length].numpy(),
-            sample['input_spec'][:, :spec_length].numpy(),
-            sr=22050,
-            hop_length=256,
-            output_path=output_dir.joinpath('spectrograms_predicted_length.svg')
-        )
-
-        if 'wsv_weights' in model_output:
-
-            visualization.plot_and_save_matrix(
-                model_output['wsv_weights'][:words_length],
-                'WSV Weights',
-                'Token Index',
-                'Word Index',
-                output_dir.joinpath('wsv_weights.svg')
-            )
-
-        if 'gst_weights' in model_output:
-
-            visualization.plot_and_save_contour(
-                model_output['gst_weights'],
-                'GST Weights',
-                output_dir.joinpath('gst_weights.svg')
-            )
-
-        if 'target_pitch' in model_output:
-
-            visualization.plot_and_save_contours(
-                model_output['predicted_pitch'][:prosody_features_length],
-                model_output['target_pitch'][:prosody_features_length],
-                'Pitch',
-                output_dir.joinpath('pitch_contours.svg')
-            )
-
-        else:
-
-            visualization.plot_and_save_contour(
-                sample['input_f0'][:predicted_prosody_features_length],
-                'Pitch',
-                output_dir.joinpath('pitch_contour.svg')
-            )
-
-        if 'target_energy' in model_output:
-
-            visualization.plot_and_save_contours(
-                model_output['predicted_energy'][:prosody_features_length],
-                model_output['target_energy'][:prosody_features_length],
-                'Energy',
-                output_dir.joinpath('energy_contour.svg')
-            )
-
-        else:
-
-            visualization.plot_and_save_contour(
-                sample['input_energy'][:predicted_prosody_features_length],
-                'Energy',
-                output_dir.joinpath('energy_contour.svg')
-            )
-
-        visualization.plot_and_save_contours(
-            model_output['predicted_durations'][:phonemes_length],
-            sample['explicit_durations'][:phonemes_length],
-            'Duration',
-            output_dir.joinpath('duration_contour.svg')
-        )
-
-        wav = inference_utils.transform_mel_to_wav(
-            model_output['pred_mel_spec'][:, :predicted_spec_length],
-            hifi_gan.decode_batch,
-            split_spec_by_silences=True
-        )
-
-        if wav is not None:
-            soundfile.write(output_dir.joinpath('predicted.wav'),
-                            wav.squeeze(0).numpy(), 22050)
-
-        if not save_target_wav:
-            return
-
-        wav = inference_utils.transform_mel_to_wav(
-            sample['input_spec'][:, :spec_length],
-            hifi_gan.decode_batch,
-            split_spec_by_silences=True
-        )
-
-        if wav is not None:
-            soundfile.write(output_dir.joinpath('target.wav'),
-                            wav.squeeze(0).numpy(), 22050)
+                      on_epoch=True)

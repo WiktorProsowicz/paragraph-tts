@@ -7,9 +7,10 @@ run_cfg:
   seed: 2137
   # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
-  max_epochs: 2
-  ds_path: tmp/librittsr_processed
-  batch_size: 8
+  load_from_checkpoint: 
+  max_epochs: 5
+  ds_path: data/librittsr-processed/librittsr_processed/
+  batch_size: 4
   save_checkpoints: true
   num_workers: 16
   train_val_split: 0.95
@@ -30,8 +31,9 @@ train_cfg:
     mel_loss: 1.0
     pitch_pred_loss: 1.0
     energy_pred_loss: 1.0
-    duration_pred_loss: 1.0
-    wsv_diversity_loss: 0.3
+    duration_pred_loss: 0.05
+    gst_entropy_loss: 0.005
+    wsv_diversity_loss: 0.0
     wsv_entropy_loss: 1.0
   loss_weight_decays:
     mel_loss: 1.0
@@ -39,19 +41,24 @@ train_cfg:
     energy_pred_loss: 1.0
     duration_pred_loss: 1.0
     wsv_diversity_loss: 0.97
-    wsv_entropy_loss: 1.01
-  gradient_clip_val: 0.5
-  stl_bin_init_temperature: 1.0
-  stl_bin_temperature_decay: 0.98
-  stl_bin_loss_start_epoch: 20
-  stl_bin_hard_start_epoch: 120
+    wsv_entropy_loss: 1.15
+    gst_entropy_loss: 0.9
+  wsv_bin_init_temperature: 0.1
+  gst_bin_init_temperature: 0.1
+  wsv_bin_temperature_decay: 0.9
+  gst_bin_temperature_decay: 0.9
+  wsv_bin_loss_start_epoch: 2
+  wsv_bin_hard_start_epoch: 8
+  gst_bin_loss_start_epoch: 1
 
 optimizer_cfg:
-  lr: 2e-4
+  base_lr: 2e-4
+  prosody_enc_lr: 2e-4
+  base_weight_decay: 1e-6
+  prosody_enc_weight_decay: 1e-6
+  lr_scheduler_gamma: 0.96
   betas: [0.9, 0.98]
   eps: 1e-8
-  weight_decay: 1e-6
-  lr_scheduler_gamma: 0.98
 
 model_cfg:
   encoder:
@@ -59,9 +66,9 @@ model_cfg:
     phoneme_vocab_size: 74
     pos_tags_vocab_size: 37
     ling_stats_dim: 4
-    input_bert_dim: 128
+    input_bert_dim: 1024
     n_att_blocks: 6
-    conformer_kernel_size: 9
+    conformer_kernel_size: 31
     att_feature_map_dim: 96
     num_att_heads: 4
     prenet_dropout_rate: 0.2
@@ -69,14 +76,14 @@ model_cfg:
   decoder:
     hidden_size: 384
     n_att_blocks: 6
-    conformer_kernel_size: 9
+    conformer_kernel_size: 31
     n_mel_channels: 80
     att_feature_map_dim: 96
     num_att_heads: 4
     blocks_dropout_rate: 0.1
     postnet_dropout_rate: 0.1
   context_encoder:
-    input_emb_dim: 128
+    input_emb_dim: 1024
     hidden_size: 768
     phonemes_hidden_size: 384
     n_blocks: 4
@@ -104,10 +111,10 @@ model_cfg:
       gru_size: 384
       dropout_rate: 0.1
     global_stl_cfg:
-      n_tokens: 10
+      n_tokens: 16
       d_model: 384
     local_stl_cfg:
-      n_tokens: 64
+      n_tokens: 128
       d_model: 384
     ling_aware_cfg:
       phonemes_vocab_size: 74

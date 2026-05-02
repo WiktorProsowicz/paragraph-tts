@@ -5,7 +5,6 @@ The script supports logging MLFlow experiment parameters and saves checkpoints.
 import logging
 import os
 import pathlib
-import sys
 
 import hydra
 import mlflow
@@ -23,14 +22,6 @@ from paragraph_tts.utils.path import processed_libri_dir_handler
 
 def _logger() -> logging.Logger:
     return logging.getLogger('paragraph_tts')
-
-
-def _get_global_rank() -> int:
-    return int(os.environ.get('RANK', os.environ.get('GLOBAL_RANK', '0')))
-
-
-def _is_global_zero() -> bool:
-    return _get_global_rank() == 0
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='train_acoustic_model')
@@ -65,6 +56,17 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
         visualize_n_samples_per_batch=script_cfg.run_cfg.visualize_n_samples_per_batch
     )
 
+    if script_cfg.run_cfg.load_from_checkpoint is not None:
+
+        _logger().info('Loading model weights from checkpoint: %s',
+                       script_cfg.run_cfg.load_from_checkpoint)
+
+        loaded_state_dict = torch.load(script_cfg.run_cfg.load_from_checkpoint,
+                                       map_location='cpu',
+                                       weights_only=False)['state_dict']
+
+        model.load_state_dict(loaded_state_dict, strict=False)
+
     mlflow.set_tracking_uri(script_cfg.run_cfg.mlflow_server_uri)
     mlflow.set_experiment(script_cfg.run_cfg.mlflow_experiment)
 
@@ -77,14 +79,12 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
             tracking_uri=script_cfg.run_cfg.mlflow_server_uri,
             run_id=run.info.run_id)
 
-        if _is_global_zero():
-
-            mlflow_logger.log_hyperparams({
-                'model_cfg': model_cfg,
-                'train_cfg': train_cfg,
-                'optim_cfg': optim_cfg,
-                'ds_cfg': ds_cfg
-            })
+        mlflow_logger.log_hyperparams({
+            'model_cfg': model_cfg,
+            'train_cfg': train_cfg,
+            'optim_cfg': optim_cfg,
+            'ds_cfg': ds_cfg
+        })
 
         _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(script_cfg))
         logging.getLogger('speechbrain.utils.parameter_transfer').setLevel(logging.CRITICAL)
@@ -126,7 +126,7 @@ def main(script_cfg: omegaconf.DictConfig) -> None:
             limit_test_batches=None,
             log_every_n_steps=25,
             accumulate_grad_batches=script_cfg.run_cfg['accumulate_grad_batches'],
-            gradient_clip_val=train_cfg['gradient_clip_val'],
+            gradient_clip_val=None,
             enable_model_summary=True
         )
 

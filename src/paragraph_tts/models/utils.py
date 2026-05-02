@@ -40,7 +40,8 @@ class AcousticModelLoss(torch.nn.Module):
     def __init__(self,
                  loss_weights: Dict[str, float],
                  loss_weight_decays: Dict[str, float],
-                 wsv_entropy_loss_start_epoch: int
+                 wsv_entropy_loss_start_epoch: int,
+                 gst_entropy_loss_start_epoch: int
                  ) -> None:
 
         super().__init__()
@@ -48,6 +49,7 @@ class AcousticModelLoss(torch.nn.Module):
         self._loss_weights = loss_weights
         self._loss_weight_decays = loss_weight_decays
         self._wsv_entropy_loss_start_epoch = wsv_entropy_loss_start_epoch
+        self._gst_entropy_loss_start_epoch = gst_entropy_loss_start_epoch
 
     def forward(self,
                 model_output: dict[str, torch.Tensor],
@@ -72,6 +74,10 @@ class AcousticModelLoss(torch.nn.Module):
             wsv_losses = self._calculate_wsv_losses(model_output, batch, epoch)
             losses.update(wsv_losses)
 
+        if 'gst_weights' in model_output:
+            gst_losses = self._calculate_gst_losses(model_output)
+            losses.update(gst_losses)
+
         return {'total_loss': self._calculate_total_loss(losses, epoch), **losses}
 
     def get_current_loss_weights(self, epoch: int) -> dict[str, float]:
@@ -81,6 +87,9 @@ class AcousticModelLoss(torch.nn.Module):
 
         if 'wsv_entropy_loss' in self._loss_weights:
             weight_decay_epochs['wsv_entropy_loss'] = epoch - self._wsv_entropy_loss_start_epoch
+
+        if 'gst_entropy_loss' in self._loss_weights:
+            weight_decay_epochs['gst_entropy_loss'] = epoch - self._gst_entropy_loss_start_epoch
 
         return {loss_name: calc_decayed_loss_weight(self._loss_weights[loss_name],
                                                     self._loss_weight_decays[loss_name],
@@ -144,6 +153,18 @@ class AcousticModelLoss(torch.nn.Module):
         if epoch >= self._wsv_entropy_loss_start_epoch:
             losses['wsv_entropy_loss'] = ctt_loss.gst_entropy_loss(model_output['wsv_weights'],
                                                                    wsv_mask)
+
+        return losses
+
+    def _calculate_gst_losses(self,
+                              model_output: dict[str, torch.Tensor]
+                              ) -> dict[str, torch.Tensor]:
+        """Calculates losses for Global Style Token outputs."""
+
+        losses: dict[str, torch.Tensor] = {}
+
+        if self._gst_entropy_loss_start_epoch <= 0:
+            losses['gst_entropy_loss'] = ctt_loss.gst_entropy_loss(model_output['gst_weights'])
 
         return losses
 

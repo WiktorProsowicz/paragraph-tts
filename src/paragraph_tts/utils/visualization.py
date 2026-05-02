@@ -1,76 +1,153 @@
 """Contains utilities for visualization during training/inference."""
-import matplotlib.pyplot as plt
+import pathlib
+import logging
+
 import torch
-from matplotlib.figure import Figure
+from speechbrain.inference.vocoders import HIFIGAN
+import soundfile
+
+from torch_dev_utils.tts import visualization as tdu_viz
+from paragraph_tts.utils import inference as inference_utils
 
 
-def plot_spectrograms(pred_spec: torch.Tensor,
-                      target_spec: torch.Tensor) -> Figure:
-    """Plots predicted and target mel-spectrograms side by side."""
-
-    fig, axs = plt.subplots(2, 1, figsize=(10, 4))
-
-    max_length = max(pred_spec.shape[1], target_spec.shape[1])
-
-    pred_spec = torch.nn.functional.pad(pred_spec,
-                                        (0, max_length - pred_spec.shape[1]),
-                                        value=0.0)
-    target_spec = torch.nn.functional.pad(target_spec,
-                                          (0, max_length - target_spec.shape[1]),
-                                          value=0.0)
-
-    axs[0].imshow(pred_spec.cpu().numpy(), origin='lower')
-    axs[0].set_title('Predicted Mel-Spectrogram')
-
-    axs[1].imshow(target_spec.cpu().numpy(), origin='lower')
-    axs[1].set_title('Target Mel-Spectrogram')
-
-    mae = torch.mean(torch.abs(pred_spec - target_spec)).item()
-
-    fig.suptitle(f'Mel-Spectrograms (MAE: {mae:.4f})')
-    fig.tight_layout()
-
-    return fig
+def _logger() -> logging.Logger:
+    return logging.getLogger(__name__)
 
 
-def plot_spec_text_alignment(alignment: torch.Tensor) -> Figure:
-    """Plots alignment matrix between text and spectrogram frames."""
+def visualize_acoustic_model_outputs(sample: dict[str, torch.Tensor],
+                                     model_output: dict[str, torch.Tensor],
+                                     hifi_gan: HIFIGAN,
+                                     save_target_wav: bool,
+                                     output_dir: pathlib.Path) -> None:
+    """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    _logger().debug('Visualizing and saving outputs to %s.', output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    ax.imshow(alignment.cpu().numpy().T, origin='lower', interpolation='none')
-    ax.set_xlabel('Spectrogram Frame Index')
-    ax.set_ylabel('Text Token Index')
-    ax.set_title('Alignment Matrix')
+    spec_length = int(sample['input_spec_length'].item())
+    predicted_spec_length = int(model_output['durations_rounded'].sum().item())
+    prosody_features_length = int(sample['prosody_features_length'].item())
+    phonemes_length = int(sample['input_phonemes_length'].item())
+    words_length = int(sample['input_word_emb_length'].item())
 
-    fig.tight_layout()
+    if prosody_features_length == spec_length:
+        predicted_prosody_features_length = predicted_spec_length
 
-    return fig
+    else:
+        predicted_prosody_features_length = phonemes_length
 
+    tdu_viz.plot_and_save_spectrograms(
+        model_output['pred_mel_spec'][:, :spec_length].numpy(),
+        sample['input_spec'][:, :spec_length].numpy(),
+        sr=22050,
+        hop_length=256,
+        output_path=output_dir.joinpath('spectrograms_target_length.svg')
+    )
 
-def plot_contours(pred_contour: torch.Tensor,
-                  target_contour: torch.Tensor,
-                  contour_name: str) -> Figure:
-    """Plots predicted and target contours (pitch/energy/duration) over time."""
+    tdu_viz.plot_and_save_spectrograms(
+        model_output['pred_mel_spec'][:, :predicted_spec_length].numpy(),
+        sample['input_spec'][:, :spec_length].numpy(),
+        sr=22050,
+        hop_length=256,
+        output_path=output_dir.joinpath('spectrograms_predicted_length.svg')
+    )
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    if 'wsv_weights' in model_output:
 
-    max_length = max(pred_contour.shape[0], target_contour.shape[0])
+        tdu_viz.plot_and_save_matrix(
+            model_output['wsv_weights'][:words_length],
+            'WSV Weights',
+            'Token Index',
+            'Word Index',
+            output_dir.joinpath('wsv_weights.svg')
+        )
 
-    pred_contour = torch.nn.functional.pad(pred_contour,
-                                           (0, max_length - pred_contour.shape[0]),
-                                           value=0.0)
-    target_contour = torch.nn.functional.pad(target_contour,
-                                             (0, max_length - target_contour.shape[0]),
-                                             value=0.0)
+    if 'gst_weights' in model_output:
 
-    ax.plot(pred_contour.cpu().numpy(), label='Predicted', color='blue')
-    ax.plot(target_contour.cpu().numpy(), label='Target', color='orange')
-    ax.set_title(f'{contour_name} Contours')
-    ax.set_xlabel('Frame Index')
-    ax.set_ylabel(f'{contour_name} Value')
-    ax.legend()
+        tdu_viz.plot_and_save_contour(
+            model_output['gst_weights'],
+            'GST Weights',
+            output_dir.joinpath('gst_weights.svg')
+        )
 
-    fig.tight_layout()
+    if 'wsv_emb' in model_output:
 
-    return fig
+        tdu_viz.plot_and_save_matrix(
+            model_output['wsv_emb'][:words_length],
+            'WSV Embeddings',
+            'Word Index',
+            'Embedding Dimension',
+            output_dir.joinpath('wsv_embeddings.svg')
+        )
+
+    if 'gst_emb' in model_output:
+
+        tdu_viz.plot_and_save_contour(
+            model_output['gst_emb'],
+            'GST Embeddings',
+            output_dir.joinpath('gst_embedding.svg')
+        )
+
+    if 'target_pitch' in model_output:
+
+        tdu_viz.plot_and_save_contours(
+            model_output['predicted_pitch'][:prosody_features_length],
+            model_output['target_pitch'][:prosody_features_length],
+            'Pitch',
+            output_dir.joinpath('pitch_contours.svg')
+        )
+
+    else:
+
+        tdu_viz.plot_and_save_contour(
+            sample['input_f0'][:predicted_prosody_features_length],
+            'Pitch',
+            output_dir.joinpath('pitch_contour.svg')
+        )
+
+    if 'target_energy' in model_output:
+
+        tdu_viz.plot_and_save_contours(
+            model_output['predicted_energy'][:prosody_features_length],
+            model_output['target_energy'][:prosody_features_length],
+            'Energy',
+            output_dir.joinpath('energy_contour.svg')
+        )
+
+    else:
+
+        tdu_viz.plot_and_save_contour(
+            sample['input_energy'][:predicted_prosody_features_length],
+            'Energy',
+            output_dir.joinpath('energy_contour.svg')
+        )
+
+    tdu_viz.plot_and_save_contours(
+        model_output['predicted_durations'][:phonemes_length],
+        sample['explicit_durations'][:phonemes_length],
+        'Duration',
+        output_dir.joinpath('duration_contour.svg')
+    )
+
+    wav = inference_utils.transform_mel_to_wav(
+        model_output['pred_mel_spec'][:, :predicted_spec_length],
+        hifi_gan.decode_batch,
+        split_spec_by_silences=True
+    )
+
+    if wav is not None:
+        soundfile.write(output_dir.joinpath('predicted.wav'),
+                        wav.squeeze(0).numpy(), 22050)
+
+    if not save_target_wav:
+        return
+
+    wav = inference_utils.transform_mel_to_wav(
+        sample['input_spec'][:, :spec_length],
+        hifi_gan.decode_batch,
+        split_spec_by_silences=True
+    )
+
+    if wav is not None:
+        soundfile.write(output_dir.joinpath('target.wav'),
+                        wav.squeeze(0).numpy(), 22050)
