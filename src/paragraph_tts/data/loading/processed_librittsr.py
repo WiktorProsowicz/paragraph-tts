@@ -8,8 +8,10 @@ from typing import Tuple
 from typing import Annotated
 import pickle
 
+import numpy as np
 import lightning.pytorch as pl
 import torch
+import torch.utils.data.distributed
 import pydantic
 from pydantic import Field
 
@@ -123,6 +125,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         return {
             'spk_emb': torch.load(utterance.paragraph.speaker_info.embedding_path),
             'input_word_emb': input_word_embeddings,
+            'input_word_emb_length': torch.tensor(input_word_embeddings.shape[0], dtype=torch.long),
             'input_phoneme_ids': phoneme_ids,
             'input_phonemes_length': phoneme_lengths,
             'input_spec': spec,
@@ -167,6 +170,7 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         return {
             'input_f0': f0,
             'input_energy': energy,
+            'prosody_features_length': torch.tensor(f0.shape[0], dtype=torch.long)
         }
 
     def _load_context_features(self,
@@ -184,8 +188,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
             context_token_pse = torch.stack(context_token_pse_list, dim=0).to(torch.float)
             context_pse_length = torch.tensor(context_token_pse.shape[0], dtype=torch.long)
         else:
-            context_token_pse = torch.empty((0, context_token_emb.shape[-1]), dtype=torch.float)
-            context_pse_length = torch.tensor(0, dtype=torch.long)
+            context_token_pse = torch.zeros((1, context_token_emb.shape[-1]), dtype=torch.float)
+            context_pse_length = torch.tensor(1, dtype=torch.long)
 
         return {
             'context_token_emb': context_token_emb,
@@ -200,7 +204,8 @@ class ProcessedLibriTTSRDataset(torch.utils.data.Dataset[dict[str, torch.Tensor]
         batch = {}
 
         for key in ['spk_emb', 'spk_rate', 'input_phonemes_length', 'input_spec_length',
-                    'context_pse_length', 'context_tokens_length', 'sentence_pos']:
+                    'context_pse_length', 'context_tokens_length', 'sentence_pos',
+                    'prosody_features_length', 'input_word_emb_length']:
 
             if not all(key in b for b in batch_samples):
                 continue
@@ -259,8 +264,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
                  batch_size: int,
                  num_workers: int,
                  train_val_split: float,
-
-                 ):
+                 seed: int):
 
         super().__init__()
 
@@ -268,6 +272,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
         self._batch_size = batch_size
         self._num_workers = num_workers
         self._train_val_split = train_val_split
+        self._seed = seed
         self._ds_cfg = ds_cfg
 
         self._train_set: ProcessedLibriTTSRDataset | None = None
@@ -278,7 +283,7 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
         _logger().debug('Setting up dataset...')
 
         all_utterances = list(self._processed_ds_handler.iter_utterances())
-        random.shuffle(all_utterances)
+        np.random.RandomState(self._seed).shuffle(all_utterances)
 
         n_train_samples = int(len(all_utterances) * self._train_val_split)
 
@@ -294,19 +299,47 @@ class ProcessedLibriTTSRDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._train_set is not None, 'Make sure to call setup() before using this method!'
 
-        return torch.utils.data.DataLoader(self._train_set,
-                                           batch_size=self._batch_size,
-                                           shuffle=True,
-                                           num_workers=self._num_workers,
-                                           pin_memory=True,
-                                           collate_fn=self._train_set.collate_fn)
+        # Create DistributedSampler for multi-GPU training
+        sampler = None
+        if self.trainer is not None and self.trainer.world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                self._train_set,
+                num_replicas=self.trainer.world_size,
+                rank=self.trainer.global_rank,
+                shuffle=True,
+                seed=self._seed,
+                drop_last=True
+            )
+
+        return torch.utils.data.DataLoader(
+            self._train_set,
+            batch_size=self._batch_size,
+            sampler=sampler,
+            shuffle=(sampler is None),
+            num_workers=self._num_workers,
+            pin_memory=True,
+            collate_fn=self._train_set.collate_fn)
 
     def val_dataloader(self) -> torch.utils.data.DataLoader[Dict[str, torch.Tensor]]:
         assert self._val_set is not None, 'Make sure to call setup() before using this method!'
 
-        return torch.utils.data.DataLoader(self._val_set,
-                                           batch_size=self._batch_size,
-                                           shuffle=False,
-                                           num_workers=self._num_workers,
-                                           pin_memory=True,
-                                           collate_fn=self._val_set.collate_fn)
+        # Create DistributedSampler for multi-GPU validation
+        sampler = None
+        if self.trainer is not None and self.trainer.world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                self._val_set,
+                num_replicas=self.trainer.world_size,
+                rank=self.trainer.global_rank,
+                shuffle=False,
+                seed=self._seed,
+                drop_last=True
+            )
+
+        return torch.utils.data.DataLoader(
+            self._val_set,
+            batch_size=self._batch_size,
+            sampler=sampler,
+            shuffle=False,
+            num_workers=self._num_workers,
+            pin_memory=True,
+            collate_fn=self._val_set.collate_fn)

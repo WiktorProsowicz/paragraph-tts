@@ -201,7 +201,7 @@ class ProcessedLibriDirHandler:
             spk_path = self._speakers_path / str(spk_id)
             paragraphs_path = spk_path / 'paragraphs'
 
-            for paragraph_dir in paragraphs_path.iterdir():
+            for paragraph_dir in sorted(paragraphs_path.iterdir()):
 
                 paragraph = self._obtain_paragraph(paragraph_dir)
 
@@ -279,6 +279,6 @@ class ProcessedLibriDirHandler:
     def _iter_speakers(self) -> Iterator[int]:
         """Iterates over all speaker IDs in the dataset."""
 
-        for spk_dir in self._speakers_path.iterdir():
+        for spk_dir in sorted(self._speakers_path.iterdir()):
 
             yield int(spk_dir.name)

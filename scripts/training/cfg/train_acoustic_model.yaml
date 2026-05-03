@@ -1,56 +1,64 @@
 ---
 run_cfg:
-  mlflow_experiment: Default
-  mlflow_run_name: Default
-    # If true, runs a quick development run (may ignore some settings).
-  dev_run: false
-    # If set, overrides num_epochs and runs for the specified number of steps.
+  mlflow_server_uri: http://localhost:5000
+  mlflow_experiment: debug
+  mlflow_run: debug
+  mlflow_run_id: null
+  seed: 2137
+  # If set, overrides num_epochs and runs for the specified number of steps.
   continue_training_from_checkpoint:
+  load_from_checkpoint: 
+  max_epochs: 5
+  ds_path: data/librittsr-processed/librittsr_processed/
+  batch_size: 4
+  save_checkpoints: true
+  num_workers: 16
+  train_val_split: 0.95
+  accumulate_grad_batches: 4
+  visualize_n_batches: 3
+  visualize_n_samples_per_batch: 3
+
+ds_cfg:
+  load_prosody_features: true
+  pitch_quantization_params: [32, -3.0, 3.0]
+  energy_quantization_params: [32, -3.0, 3.0]
+  scale_prosody_features: true
+  use_phoneme_level_prosody_features: true
+  load_context_embeddings: true
 
 train_cfg:
-  seed: 2137
-  visualize_every_n_epochs: 1
-  visualize_n_times_during_training: 5
-  val_every_n_epochs: 1
-  save_checkpoints: true
-  max_epochs: 50
-  accumulate_grad_batches: 4
-    # If set, loads model weights from the specified checkpoint before training.
-  load_model_from_checkpoint:
   loss_weights:
-    mel_loss: 2.0
+    mel_loss: 1.0
+    pitch_pred_loss: 1.0
+    energy_pred_loss: 1.0
+    duration_pred_loss: 0.05
+    gst_entropy_loss: 0.005
+    wsv_diversity_loss: 0.0
+    wsv_entropy_loss: 1.0
+  loss_weight_decays:
+    mel_loss: 1.0
     pitch_pred_loss: 1.0
     energy_pred_loss: 1.0
     duration_pred_loss: 1.0
-  loss_est_max:
-    mel_loss: 3.0
-    pitch_pred_loss: 1.0
-    energy_pred_loss: 1.15
-    duration_pred_loss: 40.0
-  gradient_clip_val: 0.5
+    wsv_diversity_loss: 0.97
+    wsv_entropy_loss: 1.15
+    gst_entropy_loss: 0.9
+  wsv_bin_init_temperature: 0.1
+  gst_bin_init_temperature: 0.1
+  wsv_bin_temperature_decay: 0.9
+  gst_bin_temperature_decay: 0.9
+  wsv_bin_loss_start_epoch: 2
+  wsv_bin_hard_start_epoch: 8
+  gst_bin_loss_start_epoch: 1
 
-
-data_cfg:
-  processed_ds_path: tmp/librittsr_processed
-  batch_size: 2
-  num_workers: 4
-  num_test_samples: 100
-  train_val_split: 0.95
-  explicit_prosody_quant:
-    n_pitch_bins: 48
-    pitch_bounds_min: -2.0
-    pitch_bounds_max: 3.0
-    n_energy_bins: 48
-    energy_bounds_min: -2.0
-    energy_bounds_max: 3.0
-
-optim_cfg:
-  name: adam
-  params:
-    lr: 0.0002
-    betas: [0.9, 0.999]
-    eps: 1e-8
-  lr_decay: 0.95
+optimizer_cfg:
+  base_lr: 2e-4
+  prosody_enc_lr: 2e-4
+  base_weight_decay: 1e-6
+  prosody_enc_weight_decay: 1e-6
+  lr_scheduler_gamma: 0.96
+  betas: [0.9, 0.98]
+  eps: 1e-8
 
 model_cfg:
   encoder:
@@ -58,9 +66,9 @@ model_cfg:
     phoneme_vocab_size: 74
     pos_tags_vocab_size: 37
     ling_stats_dim: 4
-    input_bert_dim: 1536
+    input_bert_dim: 1024
     n_att_blocks: 6
-    conformer_kernel_size: 9
+    conformer_kernel_size: 31
     att_feature_map_dim: 96
     num_att_heads: 4
     prenet_dropout_rate: 0.2
@@ -68,17 +76,17 @@ model_cfg:
   decoder:
     hidden_size: 384
     n_att_blocks: 6
-    conformer_kernel_size: 9
+    conformer_kernel_size: 31
     n_mel_channels: 80
     att_feature_map_dim: 96
     num_att_heads: 4
     blocks_dropout_rate: 0.1
     postnet_dropout_rate: 0.1
   context_encoder:
-    input_emb_dim: 1536
+    input_emb_dim: 1024
     hidden_size: 768
     phonemes_hidden_size: 384
-    n_blocks: 3
+    n_blocks: 4
     cbhg_k_banks: 6
     dropout_rate: 0.1
     num_att_heads: 4
@@ -86,8 +94,30 @@ model_cfg:
   var_adaptor:
     d_model: 384
     multi_speaker: true
-    predictor_n_layers: 5
+    predictor_n_layers: 2
     predictor_n_int_channels: 128
     predictor_kernel_size: 3
     dropout_rate: 0.1
     spk_emb_dim: 512
+    use_prosody_modelling: 'phoneme'
+  prosody_encoder:
+    ref_encoder_cfg:
+      d_model: 384
+      n_mel_channels: 80
+      conv_filters: [32, 32, 64, 128, 128]
+      conv_kernel_size: 3
+      conv_stride: [1, 2]
+      conv_padding: [1, 1]
+      gru_size: 384
+      dropout_rate: 0.1
+    global_stl_cfg:
+      n_tokens: 16
+      d_model: 384
+    local_stl_cfg:
+      n_tokens: 128
+      d_model: 384
+    ling_aware_cfg:
+      phonemes_vocab_size: 74
+      d_model: 384
+      linguistic_features_dim: 4
+      dropout_rate: 0.1

@@ -1,23 +1,100 @@
 """Contains definition of acoustic model training/inference pipelines."""
 import logging
-from typing import Any
-from typing import Dict
-from typing import Optional
+import pathlib
+from typing import Annotated, Callable
+import itertools
 
+import mlflow
 import lightning.pytorch as pl
+import pydantic
 import torch
 from comp_trans_tts.model import modules as ctt_modules
+from pydantic import Field
 from speechbrain.inference.vocoders import HIFIGAN
 
-from paragraph_tts.layers import acoustic as acoustic_layers
+from paragraph_tts.layers.acoustic import encoder as acoustic_encoder
+from paragraph_tts.layers.acoustic import decoder as acoustic_decoder
+from paragraph_tts.layers.acoustic import context_encoder as acoustic_context_encoder
 from paragraph_tts.models import utils as model_utils
-from paragraph_tts.utils import inference as inference_utils
-from paragraph_tts.utils import neural as neural_utils
-from paragraph_tts.utils import visualization as viz_utils
+from paragraph_tts.utils import visualization
 
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
+
+
+class ModelConfiguration(pydantic.BaseModel):
+    """Configuration of model architecture components."""
+
+    encoder: Annotated[acoustic_encoder.Encoder.Configuration, Field(
+        description='Configuration of acoustic encoder.')]
+
+    decoder: Annotated[acoustic_decoder.Decoder.Configuration, Field(
+        description='Configuration of acoustic decoder.')]
+
+    context_encoder: Annotated[acoustic_context_encoder.ContextEncoder.Configuration | None, Field(
+        description=('Configuration of context encoder.'
+                     'If none, context encoder is not used.'))]
+
+    var_adaptor: Annotated[ctt_modules.VarianceAdaptor.Configuration, Field(
+        description='Configuration of variance adaptor module.')]
+
+    prosody_encoder: Annotated[ctt_modules.HierarchicalProsodyEncoder.Configuration | None, Field(
+        description=('Configuration of hierarchical prosody encoder module.'
+                     'If none, hierarchical prosody encoder is not used.'))]
+
+
+class OptimizerConfiguration(pydantic.BaseModel):
+    """Optimizer parameters."""
+
+    base_lr: Annotated[float, Field(description='Learning rate for base parameters.')]
+
+    prosody_enc_lr: Annotated[float, Field(
+        description='Learning rate for prosody encoder parameters.')]
+
+    betas: Annotated[tuple[float, float], Field(
+        description='Adam beta coefficients.')]
+
+    eps: Annotated[float, Field(description='Adam epsilon value.')]
+
+    base_weight_decay: Annotated[float, Field(description='Weight decay for base parameters.')]
+
+    prosody_enc_weight_decay: Annotated[float, Field(
+        description='Weight decay for prosody encoder parameters.')]
+
+    lr_scheduler_gamma: Annotated[float, Field(
+        description='Exponential decay factor of LR scheduler.')]
+
+
+class TrainConfiguration(pydantic.BaseModel):
+    """Training loop and objective configuration."""
+
+    loss_weights: Annotated[dict[str, float], Field(
+        description='Relative weights of different loss components used for optimization.')]
+
+    loss_weight_decays: Annotated[dict[str, float], Field(
+        description='Decay factors for loss weights.')]
+
+    wsv_bin_init_temperature: Annotated[float, Field(
+        description='Initial temperature for WSV binarization in prosody encoder.')]
+
+    gst_bin_init_temperature: Annotated[float, Field(
+        description='Initial temperature for GST binarization in prosody encoder.')]
+
+    wsv_bin_temperature_decay: Annotated[float, Field(
+        description='Decay factor for temperature of WSV binarization in prosody encoder.')]
+
+    gst_bin_temperature_decay: Annotated[float, Field(
+        description='Decay factor for temperature of GST binarization in prosody encoder.')]
+
+    wsv_bin_loss_start_epoch: Annotated[int, Field(
+        description='Epoch to start applying binarization loss for prosody encoder.')]
+
+    wsv_bin_hard_start_epoch: Annotated[int, Field(
+        description='Epoch to start using hard binarization for WSV in prosody encoder.')]
+
+    gst_bin_loss_start_epoch: Annotated[int, Field(
+        description='Epoch to start applying binarization loss for GST in prosody encoder.')]
 
 
 class AcousticModel(pl.LightningModule):
@@ -27,56 +104,251 @@ class AcousticModel(pl.LightningModule):
     """
 
     def __init__(self,
-                 model_cfg: Dict[str, Any],
-                 optim_cfg: Dict[str, Any],
-                 train_cfg: Dict[str, Any],
-                 data_cfg: Dict[str, Any]) -> None:
+                 model_cfg: ModelConfiguration,
+                 optim_cfg: OptimizerConfiguration,
+                 train_cfg: TrainConfiguration,
+                 visualize_n_batches: int,
+                 visualize_n_samples_per_batch: int) -> None:
 
         super().__init__()
 
-        self._encoder = acoustic_layers.encoder.Encoder(
-            **model_cfg['encoder']
+        self._encoder = acoustic_encoder.Encoder(
+            model_cfg.encoder
         )
 
-        self._context_encoder = acoustic_layers.context_encoder.ContextEncoder(
-            **model_cfg['context_encoder']
-        )
+        if model_cfg.context_encoder is not None:
+            self._context_encoder = acoustic_context_encoder.ContextEncoder(
+                model_cfg.context_encoder
+            )
+        else:
+            self._context_encoder = None
 
-        self._decoder = acoustic_layers.decoder.Decoder(
-            **model_cfg['decoder']
-        )
+        if model_cfg.prosody_encoder is not None:
+            self._prosody_encoder = ctt_modules.HierarchicalProsodyEncoder(
+                model_cfg.prosody_encoder
+            )
+        else:
+            self._prosody_encoder = None
 
+        self._decoder = acoustic_decoder.Decoder(
+            model_cfg.decoder
+        )
         self._var_adaptor = ctt_modules.VarianceAdaptor(
-            **model_cfg['var_adaptor']
+            model_cfg.var_adaptor
         )
 
         self._model_cfg = model_cfg
         self._optim_cfg = optim_cfg
         self._train_cfg = train_cfg
-        self._data_cfg = data_cfg
+        self._vocoder: Callable[[], HIFIGAN] | None = None
+        self._visualize_n_batches = visualize_n_batches
+        self._visualize_n_samples_per_batch = visualize_n_samples_per_batch
+        self.strict_loading = False
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(
+            logger=False,
+            ignore=['visualize_n_batches', 'visualize_n_samples_per_batch']
+        )
+
+        self._loss = model_utils.AcousticModelLoss(
+            train_cfg.loss_weights,
+            train_cfg.loss_weight_decays,
+            train_cfg.wsv_bin_loss_start_epoch,
+            train_cfg.gst_bin_loss_start_epoch
+
+        )
+        self._metrics = model_utils.AcousticModelMetrics()
 
     def configure_optimizers(self):  # type: ignore
         """Sets up optimizer from config."""
 
-        opt = model_utils.optimizer_from_cfg(self._optim_cfg,
-                                             self.parameters())
+        param_groups = [{
+            'params': itertools.chain(
+                self._encoder.parameters(),
+                self._decoder.parameters(),
+                self._var_adaptor.parameters(),
+                *[self._context_encoder.parameters()] if self._context_encoder is not None else [],
+            ),
+            'lr': self._optim_cfg.base_lr,
+            'weight_decay': self._optim_cfg.base_weight_decay
+        }]
+
+        if self._prosody_encoder is not None:
+
+            param_groups.append({
+                'params': self._prosody_encoder.parameters(),
+                'lr': self._optim_cfg.prosody_enc_lr,
+                'weight_decay': self._optim_cfg.prosody_enc_weight_decay
+            })
+
+        base_opt = torch.optim.AdamW(
+            param_groups,
+            betas=self._optim_cfg.betas,
+            eps=self._optim_cfg.eps,
+        )
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            opt, gamma=self._optim_cfg['lr_decay']
+            base_opt, gamma=self._optim_cfg.lr_scheduler_gamma
         )
 
         return {
-            'optimizer': opt,
-            'lr_scheduler': scheduler
+            'optimizer': base_opt,
+            'lr_scheduler': scheduler,
         }
 
     def forward(self,  # pylint: disable=arguments-differ
-                inputs: Dict[str, torch.Tensor],
-                use_teacher_forcing: bool
-                ) -> Dict[str, torch.Tensor]:
+                inputs: dict[str, torch.Tensor],
+                use_teacher_forcing: bool,
+                wsv_bin_params: ctt_modules.StlBinarizationParams | None,
+                gst_bin_params: ctt_modules.StlBinarizationParams | None
+                ) -> dict[str, torch.Tensor]:
         """Performs forward pass of the model."""
+
+        enc_output = self._obtain_encoder_outputs(inputs)
+
+        prosody_enc_outputs: dict[str, torch.Tensor] = {}
+
+        if self._prosody_encoder is not None:
+
+            assert wsv_bin_params is not None
+
+            prosody_enc_outputs, enc_output = self._obtain_prosody_encoder_outputs(inputs,
+                                                                                   enc_output,
+                                                                                   wsv_bin_params,
+                                                                                   gst_bin_params)
+
+        dec_outputs = self._obtain_decoder_outputs(inputs, use_teacher_forcing, enc_output)
+
+        return {**dec_outputs,
+                **prosody_enc_outputs}
+
+    def _obtain_prosody_encoder_outputs(self,
+                                        inputs: dict[str, torch.Tensor],
+                                        enc_output: torch.Tensor,
+                                        wsv_bin_params: ctt_modules.StlBinarizationParams,
+                                        gst_bin_params: ctt_modules.StlBinarizationParams
+                                        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+        """Calculates outputs of hierarchical prosody encoder."""
+
+        ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
+            spectrogram=inputs['input_spec'],
+            spectrogram_length=inputs['input_spec_length'],
+            spec_word_pool_matrix=inputs['spec_to_word_pool_matrix'],
+            phoneme_ids=inputs['input_phoneme_ids'],
+            linguistic_features=inputs['input_ling_stats'],
+            phoneme_spec_indices=inputs['phone_to_spec_indices'],
+            local_stl_binarization_params=wsv_bin_params,
+            global_stl_binarization_params=gst_bin_params
+        )
+
+        outputs = {
+            'gst_weights': gst_weights,
+            'wsv_weights': wsv_weights,
+            'gst_emb': gst_emb,
+            'wsv_emb': wsv_emb
+        }
+
+        gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
+        wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
+                          inputs['word_to_phoneme_indices']]
+
+        if wsv_bin_params.hard:
+            gst_emb = gst_emb.detach()
+            wsv_emb = wsv_emb.detach()
+            gst_weights = gst_weights.detach()
+            wsv_weights = wsv_weights.detach()
+
+        return outputs, enc_output + gst_emb + wsv_emb
+
+    def _obtain_wsv_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
+        """Calculates current binarization parameters for WSV in hierarchical prosody encoder."""
+
+        if self._prosody_encoder is None:
+            return None
+
+        if self.current_epoch < self._train_cfg.wsv_bin_hard_start_epoch:
+            return ctt_modules.StlBinarizationParams(
+                hard=False,
+                temperature=model_utils.calc_decayed_loss_weight(
+                    self._train_cfg.wsv_bin_init_temperature,
+                    self._train_cfg.wsv_bin_temperature_decay,
+                    self.current_epoch
+                )
+            )
+
+        return ctt_modules.StlBinarizationParams(
+            hard=True,
+            temperature=model_utils.calc_decayed_loss_weight(
+                self._train_cfg.wsv_bin_init_temperature,
+                self._train_cfg.wsv_bin_temperature_decay,
+                self._train_cfg.wsv_bin_hard_start_epoch
+            )
+        )
+
+    def _obtain_gst_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
+        """Calculates current binarization parameters for GST in hierarchical prosody encoder."""
+
+        if self._prosody_encoder is None:
+            return None
+
+        return ctt_modules.StlBinarizationParams(
+            hard=False,
+            temperature=model_utils.calc_decayed_loss_weight(
+                self._train_cfg.gst_bin_init_temperature,
+                self._train_cfg.gst_bin_temperature_decay,
+                self.current_epoch
+            )
+        )
+
+    def _obtain_decoder_outputs(self,
+                                inputs: dict[str, torch.Tensor],
+                                use_teacher_forcing: bool,
+                                enc_output: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Calculates decoder outputs (mel-spectrogram and intermediate representations)."""
+
+        forced_args: dict[str, torch.Tensor | None] = {
+            'explicit_durations': None,
+            'pitch_target': None,
+            'energy_target': None
+        }
+
+        if use_teacher_forcing:
+
+            forced_args = {
+                'explicit_durations': inputs['explicit_durations'],
+                'pitch_target': inputs['input_f0'],
+                'energy_target': inputs['input_energy'],
+            }
+
+        var_adaptor_inputs = ctt_modules.VarianceAdaptor.ForwardInput(
+            phoneme_repr=enc_output,
+            phonemes_length=inputs['input_phonemes_length'],
+            pitch_possible_values=inputs.get('pitch_possible_values'),
+            energy_possible_values=inputs.get('energy_possible_values'),
+            speaker_embedding=inputs['spk_emb'],
+            **forced_args
+        )
+
+        var_adaptor_output = self._var_adaptor(var_adaptor_inputs)
+
+        if use_teacher_forcing:
+            mel_length = inputs['input_spec_length']
+
+        else:
+            mel_length = var_adaptor_output['durations_rounded'].sum(dim=1)
+
+        pred_mel_spec = self._decoder(
+            var_adaptor_output['output'],
+            mel_length
+        )
+
+        return {
+            'pred_mel_spec': pred_mel_spec,
+            **var_adaptor_output
+        }
+
+    def _obtain_encoder_outputs(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Calculates encoder outputs from input textual features."""
 
         enc_output = self._encoder(
             inputs['input_phoneme_ids'],
@@ -89,305 +361,119 @@ class AcousticModel(pl.LightningModule):
             inputs['input_phonemes_length']
         )
 
-        context_output = self._context_encoder(
-            inputs['context_token_emb'],
-            inputs['context_tokens_length'],
-            inputs['context_pse'],
-            inputs['context_pse_length'],
-            enc_output,
-            inputs['input_phonemes_length']
+        if self._context_encoder is not None:
+
+            context_output = self._context_encoder(
+                inputs['context_token_emb'],
+                inputs['context_tokens_length'],
+                inputs['context_pse'],
+                inputs['context_pse_length'],
+                enc_output,
+                inputs['input_phonemes_length']
+            )
+
+            enc_output = enc_output + context_output
+
+        return enc_output
+
+    def on_fit_start(self):
+        """Fit start hook."""
+
+        self.logger.log_metrics(
+            {'model_size': sum(p.numel() for p in self.parameters() if p.requires_grad)}
         )
 
-        enc_output_enriched = enc_output + context_output
-
-        forced_args: Dict[str, Optional[torch.Tensor]] = {
-            'explicit_duration': None,
-            'pitch_target': None,
-            'energy_target': None
-        }
-
-        if use_teacher_forcing:
-
-            forced_args = {
-                'explicit_duration': inputs['explicit_durations'],
-                'pitch_target': inputs['input_f0'],
-                'energy_target': inputs['input_energy'],
-            }
-
-        var_adaptor_output = self._var_adaptor(
-            phoneme_repr=enc_output_enriched,
-            phoneme_lengths=inputs['input_phonemes_length'],
-            pitch_possible_values=inputs['pitch_possible_values'],
-            energy_possible_values=inputs['energy_possible_values'],
-            speaker_embedding=inputs['spk_emb'],
-            **forced_args
+        vocoder: torch.nn.Module = HIFIGAN.from_hparams(
+            source='speechbrain/tts-hifigan-libritts-22050Hz',
+            run_opts={'device': str(self.device)}
         )
+        vocoder.eval()
+        for param in vocoder.parameters():
+            param.requires_grad = False
 
-        if use_teacher_forcing:
-            mel_length = inputs['input_spec_length']
-
-        else:
-            ph_durations = inference_utils.sanitize_predicted_durations(
-                var_adaptor_output['predicted_duration'],
-                inputs['input_phonemes_length'])
-            mel_length = ph_durations.sum(dim=1)
-
-        pred_mel_spec = self._decoder(
-            var_adaptor_output['output'],
-            mel_length
-        )
-
-        return {
-            'pred_mel_spec': pred_mel_spec,
-            **var_adaptor_output
-        }
+        self._vocoder = lambda: vocoder
 
     def training_step(self,  # pylint: disable=arguments-differ
-                      batch: Dict[str, torch.Tensor],
-                      batch_idx: int) -> torch.Tensor:
+                      batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Performs training step."""
 
         model_output = self.forward(batch,
-                                    use_teacher_forcing=True)
+                                    use_teacher_forcing=True,
+                                    wsv_bin_params=self._obtain_wsv_binarization_params(),
+                                    gst_bin_params=self._obtain_gst_binarization_params())
 
-        losses = self._calculate_losses(model_output, batch)
+        losses = self._loss(model_output, batch, self.current_epoch)
 
-        logged_dict = {f'train/{k}': v.detach().item() for k, v in losses.items()}
+        with torch.no_grad():
+            metrics = self._metrics(model_output, batch)
 
-        self.log_dict(logged_dict,
+        self.log_dict({f'train/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=True,
                       on_epoch=False,
-                      batch_size=self._data_cfg['batch_size'])
+                      batch_size=batch['input_phonemes_length'].size(0))
 
-        if self._should_visualize(batch_idx, training=True):
-
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
-
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        None,
-                                        'training',
-                                        sample_idx)
-
-        return sum(losses.values())  # type: ignore
+        return losses['total_loss']
 
     def validation_step(self,  # pylint: disable=arguments-differ
-                        batch: Dict[str, torch.Tensor],
+                        batch: dict[str, torch.Tensor],
                         batch_idx: int) -> None:
         """Performs validation step."""
 
-        model_output = self.forward(batch,
-                                    use_teacher_forcing=True)
+        model_output = self(batch,
+                            use_teacher_forcing=True,
+                            wsv_bin_params=self._obtain_wsv_binarization_params(),
+                            gst_bin_params=self._obtain_gst_binarization_params())
 
-        losses = self._calculate_losses(model_output, batch)
+        losses = self._loss(model_output, batch, self.current_epoch)
+        metrics = self._metrics(model_output, batch)
 
-        logged_dict = {f'val/{k}': v.detach().item() for k, v in losses.items()}
-
-        self.log_dict(logged_dict,
+        self.log_dict({f'val/{k}': v for k, v in {**losses, **metrics}.items()},
                       on_step=False,
                       on_epoch=True,
-                      batch_size=self._data_cfg['batch_size'])
+                      batch_size=batch['input_phonemes_length'].size(0))
 
-        if self._should_visualize(batch_idx, training=False):
+        if batch_idx < self._visualize_n_batches:
 
-            hifi_gan = HIFIGAN.from_hparams(source='speechbrain/tts-hifigan-libritts-22050Hz',
-                                            run_opts={'device': self.device})
+            model_output_inference = self(batch,
+                                          use_teacher_forcing=False,
+                                          wsv_bin_params=self._obtain_wsv_binarization_params(),
+                                          gst_bin_params=self._obtain_gst_binarization_params())
 
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+            for sample_idx in range(min(self._visualize_n_samples_per_batch,
+                                        batch['input_phonemes_length'].size(0))):
 
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        hifi_gan,
-                                        'teacher_forcing',
-                                        sample_idx)
+                sample = {k: v[sample_idx].cpu() for k, v in batch.items()}
 
-            model_output = self.forward(batch,
-                                        use_teacher_forcing=False)
+                visualization.visualize_acoustic_model_outputs(
+                    sample,
+                    {k: v[sample_idx].cpu() for k, v in model_output.items()},
+                    self._vocoder(),
+                    save_target_wav=(self.current_epoch == 0),
+                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
+                                .joinpath('viz')
+                                .joinpath(f'epoch_{self.current_epoch}')
+                                .joinpath(f'batch_{batch_idx}')
+                                .joinpath(f'sample_{sample_idx}')
+                                .joinpath('val_teacher_forcing'))
+                )
 
-            for sample_idx in range(min(10, self._data_cfg['batch_size'])):
+                visualization.visualize_acoustic_model_outputs(
+                    sample,
+                    {k: v[sample_idx].cpu() for k, v in model_output_inference.items()},
+                    self._vocoder(),
+                    save_target_wav=False,
+                    output_dir=(pathlib.Path(mlflow.get_artifact_uri())
+                                .joinpath('viz')
+                                .joinpath(f'epoch_{self.current_epoch}')
+                                .joinpath(f'batch_{batch_idx}')
+                                .joinpath(f'sample_{sample_idx}')
+                                .joinpath('val_inference'))
+                )
 
-                self._visualize_outputs(batch,
-                                        model_output,
-                                        hifi_gan,
-                                        'inference',
-                                        sample_idx,)
+    def on_validation_epoch_end(self):
+        """Validation epoch end hook."""
 
-    def _visualize_outputs(self,
-                           batch: Dict[str, torch.Tensor],
-                           model_output: Dict[str, torch.Tensor],
-                           hifi_gan: Optional[HIFIGAN],
-                           base_label: str,
-                           sample_idx: int) -> None:
-        """Visualizes model outputs (spectrograms, pitch/energy, output wav)."""
-
-        tensorboard = self.loggers[1].experiment  # type: ignore
-
-        _logger().debug('Visualizing outputs for sample %d (label=%s).',
-                        sample_idx, base_label)
-
-        spec_length = int(batch['input_spec_length'][sample_idx].item())
-
-        fig = viz_utils.plot_spectrograms(
-            model_output['pred_mel_spec'][sample_idx].detach()[:, :spec_length],
-            batch['input_spec'][sample_idx].detach()[:, :spec_length])
-
-        tensorboard.add_figure(f'{base_label}/spectrograms/{sample_idx}',
-                               fig,
-                               self.trainer.global_step)
-
-        if 'target_pitch_quant' in model_output:
-
-            cont_len = int(batch['input_spec_length'][sample_idx].item())
-
-            fig = viz_utils.plot_contours(
-                model_output['predicted_pitch'][sample_idx].detach()[:cont_len],
-                model_output['target_pitch_quant'][sample_idx].detach()[:cont_len],
-                'Pitch'
-            )
-
-            tensorboard.add_figure(f'{base_label}/pitch/{sample_idx}',
-                                   fig,
-                                   self.trainer.global_step)
-
-        if 'target_energy_quant' in model_output:
-
-            cont_len = int(batch['input_spec_length'][sample_idx].item())
-
-            fig = viz_utils.plot_contours(
-                model_output['predicted_energy'][sample_idx].detach()[:cont_len],
-                model_output['target_energy_quant'][sample_idx].detach()[:cont_len],
-                'Energy'
-            )
-
-            tensorboard.add_figure(f'{base_label}/energy/{sample_idx}',
-                                   fig,
-                                   self.trainer.global_step)
-
-        if 'duration_rounded' in model_output:
-
-            cont_len = int(batch['input_phonemes_length'][sample_idx].item())
-
-            fig = viz_utils.plot_contours(
-                model_output['predicted_duration'][sample_idx].detach()[:cont_len],
-                model_output['duration_rounded'][sample_idx].detach()[:cont_len],
-                'Duration'
-            )
-
-            tensorboard.add_figure(f'{base_label}/durations/{sample_idx}',
-                                   fig,
-                                   self.trainer.global_step)
-
-        if hifi_gan is None:
-            return
-
-        if base_label != 'inference':
-            mel_len = int(batch['input_spec_length'][sample_idx].item())
-
-        else:
-            san_dur = inference_utils.sanitize_predicted_durations(
-                model_output['predicted_duration'],
-                batch['input_phonemes_length'])[sample_idx]
-            mel_len = int(san_dur.sum().item())
-
-        wav = inference_utils.transform_mel_to_wav(
-            model_output['pred_mel_spec'][sample_idx][:, :mel_len],
-            hifi_gan.decode_batch,
-            split_spec_by_silences=True
-        )
-
-        if wav is not None:
-            tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/generated',
-                                  wav.squeeze(0),
-                                  self.trainer.global_step,
-                                  sample_rate=22050)
-
-        mel_len = int(batch['input_spec_length'][sample_idx])
-
-        wav = inference_utils.transform_mel_to_wav(
-            batch['input_spec'][sample_idx][:, :mel_len],
-            hifi_gan.decode_batch,
-            split_spec_by_silences=True
-        )
-
-        if wav is not None:
-            tensorboard.add_audio(f'{base_label}/wav/{sample_idx}/target',
-                                  wav.squeeze(0),
-                                  self.trainer.global_step,
-                                  sample_rate=22050)
-
-    def _should_visualize(self,
-                          batch_idx: int,
-                          training: bool) -> bool:
-        """Decides whether to visualize outputs on the current train/val step."""
-
-        if (self.trainer.current_epoch + 1) % self._train_cfg['visualize_every_n_epochs'] != 0:
-            return False
-
-        if not training and batch_idx != 0:
-            return False
-
-        if training:
-            n_viz = self._train_cfg['visualize_n_times_during_training']
-            viz_interval = self.trainer.num_training_batches // (n_viz + 1)
-            proper_indices = [(i + 1) * viz_interval for i in range(n_viz)]
-
-            if batch_idx not in proper_indices:
-                return False
-
-        return True
-
-    def _calculate_losses(self,
-                          model_output: Dict[str, torch.Tensor],
-                          batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Calculates losses from model output and target features."""
-
-        mel_loss = torch.nn.MSELoss(reduction='none')(model_output['pred_mel_spec'],
-                                                      batch['input_spec'])
-
-        spec_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
-        spec_mask = spec_mask.unsqueeze(1).expand_as(mel_loss)
-
-        mel_loss = (mel_loss * spec_mask).sum() / spec_mask.sum()
-
-        losses = {
-            'mel_loss': mel_loss
-        }
-
-        teacher_forcing_outputs = (
-            'duration_rounded', 'target_pitch_quant', 'target_energy_quant'
-        )
-
-        if any(el in model_output for el in teacher_forcing_outputs):
-
-            assert all(el in model_output for el in teacher_forcing_outputs)
-
-            prosody_mask = neural_utils.binary_mask_from_lengths(batch['input_spec_length'])
-
-            pitch_pred_loss = torch.nn.MSELoss(reduction='none')(
-                model_output['predicted_pitch'],
-                model_output['target_pitch_quant'].detach()
-            )
-            pitch_pred_loss = (pitch_pred_loss * prosody_mask).sum() / prosody_mask.sum()
-            losses['pitch_pred_loss'] = pitch_pred_loss
-
-            energy_pred_loss = torch.nn.MSELoss(reduction='none')(
-                model_output['predicted_energy'],
-                model_output['target_energy_quant'].detach()
-            )
-            energy_pred_loss = (energy_pred_loss * prosody_mask).sum() / prosody_mask.sum()
-            losses['energy_pred_loss'] = energy_pred_loss
-
-            duration_mask = neural_utils.binary_mask_from_lengths(batch['input_phonemes_length'])
-
-            duration_loss = torch.nn.MSELoss(reduction='none')(
-                model_output['predicted_duration'],
-                model_output['duration_rounded'].to(torch.float32).detach()
-            )
-            duration_loss = (duration_loss * duration_mask).sum() / duration_mask.sum()
-            losses['duration_pred_loss'] = duration_loss
-
-        for l_name in losses:
-            losses[l_name] /= self._train_cfg['loss_est_max'][l_name]
-            losses[l_name] *= self._train_cfg['loss_weights'][l_name]
-
-        return losses
+        self.log_dict({f'loss_weights/{k}': v
+                       for k, v in self._loss.get_current_loss_weights(self.current_epoch).items()},
+                      on_step=False,
+                      on_epoch=True)

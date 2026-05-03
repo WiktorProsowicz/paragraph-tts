@@ -6,6 +6,6 @@ tmp
 __pycache__/
 outputs/
 log/
-mlruns/
-tensorboard/
 .mypy_cache/
+mlflow_tracking.db
+mlflow_artifacts/

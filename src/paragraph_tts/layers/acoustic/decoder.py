@@ -1,6 +1,7 @@
 """Contains definition of acoustic model's decoder module."""
 import torch
 from comp_trans_tts.model.transformers import conformer
+import pydantic
 
 from paragraph_tts.layers.shared import permute_former_att
 from paragraph_tts.utils import neural as neural_utils
@@ -9,15 +10,19 @@ from paragraph_tts.utils import neural as neural_utils
 class Decoder(torch.nn.Module):
     """Decodes encoded representations into mel-spectrogram frames."""
 
-    def __init__(self,
-                 hidden_size: int,
-                 n_att_blocks: int,
-                 conformer_kernel_size: int,
-                 n_mel_channels: int,
-                 att_feature_map_dim: int,
-                 num_att_heads: int,
-                 blocks_dropout_rate: float,
-                 postnet_dropout_rate: float):
+    class Configuration(pydantic.BaseModel):
+        """Input configuration for acoustic decoder."""
+
+        hidden_size: int
+        n_att_blocks: int
+        conformer_kernel_size: int
+        n_mel_channels: int
+        att_feature_map_dim: int
+        num_att_heads: int
+        blocks_dropout_rate: float
+        postnet_dropout_rate: float
+
+    def __init__(self, cfg: Configuration):
 
         super().__init__()
 
@@ -25,25 +30,25 @@ class Decoder(torch.nn.Module):
             [
                 conformer.ConformerBlock(
                     attention_module=permute_former_att.PermuteFormerMHA(
-                        d_model=hidden_size,
-                        num_heads=num_att_heads,
-                        feature_map_dim=att_feature_map_dim
+                        d_model=cfg.hidden_size,
+                        num_heads=cfg.num_att_heads,
+                        feature_map_dim=cfg.att_feature_map_dim
                     ),
-                    encoder_dim=hidden_size,
-                    feed_forward_dropout_p=blocks_dropout_rate,
-                    attention_dropout_p=blocks_dropout_rate,
-                    conv_dropout_p=blocks_dropout_rate,
-                    conv_kernel_size=conformer_kernel_size
+                    encoder_dim=cfg.hidden_size,
+                    feed_forward_dropout_p=cfg.blocks_dropout_rate,
+                    attention_dropout_p=cfg.blocks_dropout_rate,
+                    conv_dropout_p=cfg.blocks_dropout_rate,
+                    conv_kernel_size=cfg.conformer_kernel_size
                 )
-                for _ in range(n_att_blocks)
+                for _ in range(cfg.n_att_blocks)
             ]
         )
 
         self._post_net = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.Linear(cfg.hidden_size, cfg.hidden_size),
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=postnet_dropout_rate),
-            torch.nn.Linear(hidden_size, n_mel_channels)
+            torch.nn.Dropout(p=cfg.postnet_dropout_rate),
+            torch.nn.Linear(cfg.hidden_size, cfg.n_mel_channels)
         )
 
     def forward(self,
