@@ -241,6 +241,12 @@ class AcousticModel(pl.LightningModule):
             global_stl_binarization_params=gst_bin_params
         )
 
+        if wsv_bin_params.hard:
+            gst_emb = gst_emb.detach()
+            wsv_emb = wsv_emb.detach()
+            gst_weights = gst_weights.detach()
+            wsv_weights = wsv_weights.detach()
+
         outputs = {
             'gst_weights': gst_weights,
             'wsv_weights': wsv_weights,
@@ -251,13 +257,6 @@ class AcousticModel(pl.LightningModule):
         gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
         wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
                           inputs['word_to_phoneme_indices']]
-
-        if wsv_bin_params.hard:
-            gst_emb = gst_emb.detach()
-            wsv_emb = wsv_emb.detach()
-            gst_weights = gst_weights.detach()
-            wsv_weights = wsv_weights.detach()
-
         return outputs, enc_output + gst_emb + wsv_emb
 
     def _obtain_wsv_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
