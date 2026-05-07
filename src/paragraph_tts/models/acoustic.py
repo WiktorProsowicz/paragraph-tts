@@ -212,22 +212,26 @@ class AcousticModel(pl.LightningModule):
 
             assert wsv_bin_params is not None
 
-            prosody_enc_outputs, enc_output = self._obtain_prosody_encoder_outputs(inputs,
-                                                                                   enc_output,
-                                                                                   wsv_bin_params,
-                                                                                   gst_bin_params)
+            prosody_enc_outputs = self.obtain_prosody_encoder_outputs(inputs,
+                                                                      wsv_bin_params,
+                                                                      gst_bin_params)
+
+            gst_emb = prosody_enc_outputs['gst_emb'].unsqueeze(1).expand_as(enc_output)
+            wsv_emb = prosody_enc_outputs['wsv_emb'][torch.arange(enc_output.size(0)).unsqueeze(1),
+                                                     inputs['word_to_phoneme_indices']]
+
+            enc_output = enc_output + gst_emb + wsv_emb
 
         dec_outputs = self._obtain_decoder_outputs(inputs, use_teacher_forcing, enc_output)
 
         return {**dec_outputs,
                 **prosody_enc_outputs}
 
-    def _obtain_prosody_encoder_outputs(self,
-                                        inputs: dict[str, torch.Tensor],
-                                        enc_output: torch.Tensor,
-                                        wsv_bin_params: ctt_modules.StlBinarizationParams,
-                                        gst_bin_params: ctt_modules.StlBinarizationParams
-                                        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    def obtain_prosody_encoder_outputs(self,
+                                       inputs: dict[str, torch.Tensor],
+                                       wsv_bin_params: ctt_modules.StlBinarizationParams,
+                                       gst_bin_params: ctt_modules.StlBinarizationParams
+                                       ) -> dict[str, torch.Tensor]:
         """Calculates outputs of hierarchical prosody encoder."""
 
         ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
@@ -254,10 +258,7 @@ class AcousticModel(pl.LightningModule):
             'wsv_emb': wsv_emb
         }
 
-        gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
-        wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
-                          inputs['word_to_phoneme_indices']]
-        return outputs, enc_output + gst_emb + wsv_emb
+        return outputs
 
     def _obtain_wsv_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
         """Calculates current binarization parameters for WSV in hierarchical prosody encoder."""
