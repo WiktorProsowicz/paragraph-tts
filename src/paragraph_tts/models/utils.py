@@ -34,6 +34,35 @@ def calc_decayed_loss_weight(initial_weight: float, decay_rate: float, epoch: in
     return initial_weight * (decay_rate ** epoch)
 
 
+def moe_load_balancing_loss(router_logits: torch.Tensor,
+                            topk_indices: torch.Tensor) -> torch.Tensor:
+    """Calculates load balancing loss for a MoE layer."""
+
+    n_experts = router_logits.size(-1)
+
+    load = moe_expert_usage(router_logits, topk_indices)
+    importance = torch.softmax(router_logits, dim=-1).mean(dim=0)
+
+    return (load * importance).sum() * n_experts
+
+
+def moe_router_z_loss(router_logits: torch.Tensor) -> torch.Tensor:
+    """Calculates router Z loss for a MoE layer."""
+
+    log_z = torch.logsumexp(router_logits, dim=-1)
+    return torch.mean(log_z ** 2)
+
+
+def moe_expert_usage(router_logits: torch.Tensor, topk_indices: torch.Tensor) -> torch.Tensor:
+    """Calculates the usage of each expert in a MoE layer."""
+
+    expert_mask = torch.zeros_like(router_logits, dtype=torch.float32)
+    expert_mask.scatter_(dim=-1, index=topk_indices, value=1.0)
+    usage = expert_mask.sum(dim=0) / router_logits.size(0)
+
+    return usage
+
+
 class AcousticModelLoss(torch.nn.Module):
     """Calculates losses w.r.t. the acoustic model's output."""
 

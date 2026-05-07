@@ -23,12 +23,6 @@ class STLPredictorDataset(torch_geometric.data.Dataset):  # pylint: disable=abst
         include_stl_series: Annotated[str, Field(
             description="The name of the STL series to include in the dataset.")]
 
-        input_embedding_dim: Annotated[int, Field(
-            description="The dimension of the input word embeddings.")]
-
-        gst_nodes_dim: Annotated[int, Field(
-            description="The initial dimension of the GST nodes in the graph.")]
-
     def __init__(self,
                  config: Configuration,
                  samples: list[stl_predictor_ds_handler.ProcessedParagraph]):
@@ -37,6 +31,10 @@ class STLPredictorDataset(torch_geometric.data.Dataset):  # pylint: disable=abst
 
         self._samples = samples
         self._config = config
+
+    def get_sample_metadata(self, idx: int) -> stl_predictor_ds_handler.ProcessedParagraph:
+        """Returns the metadata of the sample with the given index."""
+        return self._samples[idx]
 
     def len(self) -> int:
         """Returns the number of samples in the dataset."""
@@ -53,8 +51,8 @@ class STLPredictorDataset(torch_geometric.data.Dataset):  # pylint: disable=abst
         ]
 
         graph['word_emb'].x = torch.cat(word_embeddings_list, dim=0)
-        graph['global_emb'].x = torch.zeros((len(sample.utterances), self._config.gst_nodes_dim),
-                                            dtype=torch.float32)
+        graph['global_emb'].x = torch.stack([torch.mean(word_embeddings, dim=0)
+                                             for word_embeddings in word_embeddings_list])
 
         graph['word_emb',
               'follows',
@@ -100,6 +98,8 @@ class STLPredictorDataset(torch_geometric.data.Dataset):  # pylint: disable=abst
         graph.has_wsv_mask = torch.cat(has_wsv_mask, dim=0)
         graph.gst_weights = torch.stack(gst_weights)
         graph.has_gst_mask = torch.stack(has_gst_mask)
+        graph.sentence_lengths = torch.tensor(
+            [word_embeddings.size(0) for word_embeddings in word_embeddings_list], dtype=torch.long)
 
         return graph
 
@@ -123,6 +123,12 @@ class STLPredictorDataModule(pl.LightningDataModule):
 
         self._train_ds: STLPredictorDataset | None = None
         self._val_ds: STLPredictorDataset | None = None
+
+    @property
+    def val_ds(self) -> STLPredictorDataset:
+        """Returns the validation dataset."""
+        assert self._val_ds is not None, "Call setup() first."
+        return self._val_ds
 
     def setup(self, stage: str | None = None) -> None:
 

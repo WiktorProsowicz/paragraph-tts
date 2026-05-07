@@ -1,0 +1,46 @@
+---
+run_cfg:
+  mlflow_server_uri: http://localhost:5000
+  mlflow_experiment: stl_predictor
+  mlflow_run: stl_predictor
+  mlflow_run_id: null
+  seed: 2137
+  continue_training_from_checkpoint:
+  max_epochs: 10
+  ds_path: tmp/stl_predictor_ds/
+  batch_size: 6
+  save_checkpoints: true
+  num_workers: 16
+  train_val_split: 0.95
+  accumulate_grad_batches: 2
+  viz_n_batches: 2
+  viz_n_samples_per_batch: 10
+  grad_clip_val: 1.0
+
+ds_cfg:
+  include_stl_series: faster_bin_diversity_6
+
+optimizer_cfg:
+  learning_rate: 2e-4
+  weight_decay: 1e-6
+  betas: [0.9, 0.98]
+  eps: 1e-8
+
+train_cfg:
+  gst_pred_loss_weight: 6.0
+  wsv_pred_loss_weight: 0.3
+  moe_lb_loss_weight: 0.05
+  moe_z_loss_weight: 0.005
+
+model_cfg:
+  input_embedding_dim: 1024
+  hidden_dim: 512
+  num_heads: 8
+  fft_proj_dim: 1024
+  n_experts: 6
+  top_k_experts: 2
+  num_layers: 1
+  gst_weights_dim: 16
+  wsv_weights_dim: 128
+  dropout: 0.1
+
