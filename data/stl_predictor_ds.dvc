@@ -1,0 +1,6 @@
+outs:
+- md5: bf3dd8715f6be61f6dda257c7e94bcc5.dir
+  size: 30597853282
+  nfiles: 1
+  hash: md5
+  path: stl_predictor_ds
