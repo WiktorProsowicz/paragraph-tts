@@ -276,13 +276,11 @@ class STLPredictor(pl.LightningModule):
 
         pred_gst_logits = gst_logits[graph.has_gst_mask]
         pred_wsv_logits = wsv_logits[graph.has_wsv_mask]
+        sentence_lengths = graph.sentence_lengths[graph.has_gst_mask]
 
         for utt_idx, utt_meta in enumerate(utterances):
 
-            if utt_meta.stl_weights is None:
-                continue
-
-            utt_length = int(graph.sentence_lengths[utt_idx].item())
+            utt_length = int(sentence_lengths[utt_idx].item())
 
             viz_utils.plot_and_save_wsv_prediction(
                 torch.softmax(pred_wsv_logits[cum_length:cum_length + utt_length], dim=-1),

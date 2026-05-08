@@ -7,12 +7,12 @@ run_cfg:
   seed: 2137
   continue_training_from_checkpoint:
   max_epochs: 10
-  ds_path: tmp/stl_predictor_ds/
+  ds_path: data/stl_predictor_ds/stl_predictor_ds/
   batch_size: 6
   save_checkpoints: true
   num_workers: 16
   train_val_split: 0.95
-  accumulate_grad_batches: 2
+  accumulate_grad_batches: 1
   viz_n_batches: 2
   viz_n_samples_per_batch: 10
   grad_clip_val: 1.0
