@@ -267,6 +267,9 @@ class STLPredictorOutput(TypedDict):
     gst_logits: torch.Tensor
     topk_indices: dict[str, list[torch.Tensor]]
     router_logits: dict[str, list[torch.Tensor]]
+    final_wsv_weights: torch.Tensor
+    final_gst_weights: torch.Tensor
+    wsv_cl_logits: torch.Tensor | None
 
 
 class STLPredictorLoss(torch.nn.Module):
@@ -275,26 +278,20 @@ class STLPredictorLoss(torch.nn.Module):
     def __init__(self,
                  loss_weights: dict[str, float],
                  loss_weight_decays: dict[str, float],
-                 preds_loss_mode: Literal['kl-divergence', 'mse']
+                 model_output_mode: Literal['logits', 'weights', 'classification-plus-weights'],
+                 wsv_cl_pos_weight: float | None
                  ) -> None:
 
         super().__init__()
 
         self._loss_weights = loss_weights
         self._loss_weight_decays = loss_weight_decays
-        self._preds_loss_mode = preds_loss_mode
+        self._model_output_mode = model_output_mode
 
-        if preds_loss_mode == 'kl-divergence':
-            self._gst_loss = torch.nn.KLDivLoss(reduction='batchmean')
-            self._wsv_loss = torch.nn.KLDivLoss(reduction='batchmean')
+        if self._model_output_mode == 'classification-plus-weights':
+            assert wsv_cl_pos_weight is not None
 
-        elif preds_loss_mode == 'mae':
-            self._gst_loss = torch.nn.L1Loss()
-            self._wsv_loss = torch.nn.L1Loss()
-
-        else:
-            _logger().critical('Invalid preds_loss_mode: %s.', preds_loss_mode)
-            sys.exit(1)
+        self._wsv_cl_pos_weight = torch.tensor(wsv_cl_pos_weight)
 
     def forward(self,
                 predictions: STLPredictorOutput,
@@ -305,17 +302,42 @@ class STLPredictorLoss(torch.nn.Module):
         chosen_gst_logits = predictions['gst_logits'][batch_graph.has_gst_mask]
         chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
 
-        if self._preds_loss_mode == 'kl-divergence':
-            gst_loss = self._gst_loss(torch.log_softmax(chosen_gst_logits, dim=-1),
-                                      batch_graph.gst_weights)
-            wsv_loss = self._wsv_loss(torch.log_softmax(chosen_wsv_logits, dim=-1),
-                                      batch_graph.wsv_weights)
+        loss_components = {}
+
+        if self._model_output_mode == 'logits':
+            loss_components['gst_loss'] = torch.nn.functional.kl_div(
+                torch.log_softmax(chosen_gst_logits, dim=-1),
+                batch_graph.gst_weights,
+                reduction='batchmean')
+            loss_components['wsv_loss'] = torch.nn.functional.kl_div(
+                torch.log_softmax(chosen_wsv_logits, dim=-1),
+                batch_graph.wsv_weights,
+                reduction='batchmean')
+
+        elif self._model_output_mode == 'weights':
+            loss_components['gst_loss'] = torch.nn.functional.l1_loss(chosen_gst_logits,
+                                                                      batch_graph.gst_weights)
+            loss_components['wsv_loss'] = torch.nn.functional.l1_loss(chosen_wsv_logits,
+                                                                      batch_graph.wsv_weights)
 
         else:
-            gst_loss = self._gst_loss(chosen_gst_logits,
-                                      batch_graph.gst_weights)
-            wsv_loss = self._wsv_loss(chosen_wsv_logits,
-                                      batch_graph.wsv_weights)
+            loss_components['gst_loss'] = torch.nn.functional.kl_div(
+                torch.log_softmax(chosen_gst_logits, dim=-1),
+                batch_graph.gst_weights,
+                reduction='batchmean'
+            )
+
+            pos_wsv_mask = batch_graph.wsv_weights > 1e-5
+
+            loss_components['wsv_cl_loss'] = torch.nn.functional.binary_cross_entropy_with_logits(
+                predictions['wsv_cl_logits'][batch_graph.has_wsv_mask],
+                pos_wsv_mask.float(),
+                pos_weight=self._wsv_cl_pos_weight
+            )
+            loss_components['wsv_loss'] = torch.nn.functional.l1_loss(
+                chosen_wsv_logits[pos_wsv_mask],
+                batch_graph.wsv_weights[pos_wsv_mask]
+            )
 
         load_balancing_losses = {}
         z_losses = {}
@@ -342,19 +364,14 @@ class STLPredictorLoss(torch.nn.Module):
             for name in self._loss_weights
         }
 
-        loss_components = {
-            'gst_pred_loss': gst_loss,
-            'wsv_pred_loss': wsv_loss,
-            'moe_lb_loss': sum(load_balancing_losses.values()),
-            'moe_z_loss': sum(z_losses.values())
-        }
+        loss_components['moe_lb_loss'] = sum(load_balancing_losses.values())
+        loss_components['moe_z_loss'] = sum(z_losses.values())
 
         total_loss = sum(loss * loss_weights[name] for name, loss in loss_components.items())
 
         return {
             'total_loss': total_loss,
-            'gst_pred_loss': gst_loss,
-            'wsv_pred_loss': wsv_loss,
+            **loss_components,
             **load_balancing_losses,
             **z_losses
         }

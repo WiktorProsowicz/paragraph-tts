@@ -34,13 +34,16 @@ class TrainConfig(pydantic.BaseModel):
     loss_weight_decays: Annotated[dict[str, float], Field(
         description='Decay rates for each loss component weights.')]
 
+    wsv_cl_pos_weight: Annotated[float | None, Field(
+        description='Positive class weight for the WSV classification loss.')]
+
 
 class ModelConfig(pydantic.BaseModel):
     """Configuration for the STL predictor model."""
 
     encoder: predictor_layers.Encoder.Configuration
 
-    output_mode: Annotated[Literal['logits', 'weights'], Field(
+    output_mode: Annotated[Literal['logits', 'weights', 'classification-plus-weights'], Field(
         description='Determines the output mode for the predictor.')]
 
 
@@ -74,7 +77,8 @@ class STLPredictor(pl.LightningModule):
         self._loss = model_utils.STLPredictorLoss(
             loss_weights=train_cfg.loss_init_weights,
             loss_weight_decays=train_cfg.loss_weight_decays,
-            preds_loss_mode='kl-divergence' if model_cfg.output_mode == 'logits' else 'mae',
+            model_output_mode=model_cfg.output_mode,
+            wsv_cl_pos_weight=train_cfg.wsv_cl_pos_weight
         )
 
     def configure_optimizers(self):  # type: ignore
@@ -89,7 +93,24 @@ class STLPredictor(pl.LightningModule):
                 batch_graph: HeteroData) -> model_utils.STLPredictorOutput:
         """Predicts the GST/WSV weights for the sentences in the input graph."""
 
-        return self._encoder(batch_graph)
+        outputs = self._encoder(batch_graph)
+
+        if self._model_cfg.output_mode == 'classification-plus-weights':
+
+            pos_wsv_mask = (outputs['wsv_cl_logits'] > 0.5).float()
+            wsv_weights = torch.softmax(outputs['wsv_logits'], dim=-1)
+
+            outputs['final_wsv_weights'] = wsv_weights * pos_wsv_mask.unsqueeze(-1)
+            outputs['final_gst_weights'] = torch.softmax(outputs['gst_logits'], dim=-1)
+
+        elif self._model_cfg.output_mode == 'logits':
+
+            outputs['final_wsv_weights'] = torch.softmax(outputs['wsv_logits'], dim=-1)
+            outputs['final_gst_weights'] = torch.softmax(outputs['gst_logits'], dim=-1)
+
+        else:
+            outputs['final_wsv_weights'] = outputs['wsv_logits']
+            outputs['final_gst_weights'] = outputs['gst_logits']
 
     def training_step(self,  # pylint: disable=arguments-differ
                       batch_graph: HeteroData) -> torch.Tensor:
@@ -151,18 +172,18 @@ class STLPredictor(pl.LightningModule):
                 global_len = int(graph['global_emb'].x.size(0))
                 local_len = int(graph['word_emb'].x.size(0))
 
-                gst_logits = predictions['gst_logits'][cum_global_length:
-                                                       cum_global_length + global_len]
-                wsv_logits = predictions['wsv_logits'][cum_local_length:
-                                                       cum_local_length + local_len]
+                gst_weights = predictions['final_gst_weights'][cum_global_length:
+                                                               cum_global_length + global_len]
+                wsv_weights = predictions['final_wsv_weights'][cum_local_length:
+                                                               cum_local_length + local_len]
 
                 cum_global_length += global_len
                 cum_local_length += local_len
 
                 self._visualize_predictions(
                     graph.cpu(),
-                    gst_logits.cpu(),
-                    wsv_logits.cpu(),
+                    gst_weights.cpu(),
+                    wsv_weights.cpu(),
                     original_ds.get_sample_metadata(batch_idx * batch_graph.batch_size + graph_idx),
                     (pathlib.Path(mlflow.get_artifact_uri())
                      .joinpath('viz')
@@ -175,15 +196,11 @@ class STLPredictor(pl.LightningModule):
                            batch_graph: HeteroData) -> dict[str, torch.Tensor]:
         """Calculates the metrics for the given predictions and batch graph."""
 
-        chosen_gst_logits = predictions['gst_logits'][batch_graph.has_gst_mask]
-        chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
+        chosen_gst_weights = predictions['final_gst_weights'][batch_graph.has_gst_mask]
+        chosen_wsv_weights = predictions['final_wsv_weights'][batch_graph.has_wsv_mask]
 
-        if self._model_cfg.output_mode == 'logits':
-            chosen_gst_logits = torch.softmax(chosen_gst_logits, dim=-1)
-            chosen_wsv_logits = torch.softmax(chosen_wsv_logits, dim=-1)
-
-        gst_pred_ae = torch.abs(chosen_gst_logits - batch_graph.gst_weights)
-        wsv_pred_ae = torch.abs(chosen_wsv_logits - batch_graph.wsv_weights)
+        gst_pred_ae = torch.abs(chosen_gst_weights - batch_graph.gst_weights)
+        wsv_pred_ae = torch.abs(chosen_wsv_weights - batch_graph.wsv_weights)
 
         metrics = {
             'gst_pred_mae': gst_pred_ae.mean(),
@@ -213,8 +230,8 @@ class STLPredictor(pl.LightningModule):
 
     def _visualize_predictions(self,
                                graph: HeteroData,
-                               gst_logits: torch.Tensor,
-                               wsv_logits: torch.Tensor,
+                               gst_weights: torch.Tensor,
+                               wsv_weights: torch.Tensor,
                                sample_metadata: stl_predictor_ds_handler.ProcessedParagraph,
                                output_dir: pathlib.Path
                                ) -> None:
@@ -231,19 +248,15 @@ class STLPredictor(pl.LightningModule):
             if utt.stl_weights is not None
         ]
 
-        pred_gst_logits = gst_logits[graph.has_gst_mask]
-        pred_wsv_logits = wsv_logits[graph.has_wsv_mask]
+        pred_gst_weights = gst_weights[graph.has_gst_mask]
+        pred_wsv_weights = wsv_weights[graph.has_wsv_mask]
         sentence_lengths = graph.sentence_lengths[graph.has_gst_mask]
 
         for utt_idx, utt_meta in enumerate(utterances):
 
             utt_length = int(sentence_lengths[utt_idx].item())
-            wsv_pred_utt = pred_wsv_logits[cum_length:cum_length + utt_length]
-            gst_pred_utt = pred_gst_logits[utt_idx]
-
-            if self._model_cfg.output_mode == 'logits':
-                wsv_pred_utt = torch.softmax(wsv_pred_utt, dim=-1)
-                gst_pred_utt = torch.softmax(gst_pred_utt, dim=-1)
+            wsv_pred_utt = pred_wsv_weights[cum_length:cum_length + utt_length]
+            gst_pred_utt = pred_gst_weights[utt_idx]
 
             viz_utils.plot_and_save_wsv_prediction(
                 wsv_pred_utt,

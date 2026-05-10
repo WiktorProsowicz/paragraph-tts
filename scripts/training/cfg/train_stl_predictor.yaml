@@ -38,7 +38,7 @@ train_cfg:
     wsv_pred_loss: 1.0
     moe_lb_loss: 1.0
     moe_z_loss: 1.0
-
+  wsv_cl_pos_weight: 2.0
 
 model_cfg:
   encoder:
@@ -52,4 +52,5 @@ model_cfg:
     gst_weights_dim: 16
     wsv_weights_dim: 128
     dropout: 0.1
-  output_mode: weights
+    use_wsv_classification: true
+  output_mode: classification-plus-weights

@@ -103,6 +103,7 @@ class Encoder(torch.nn.Module):
         gst_weights_dim: int
         wsv_weights_dim: int
         dropout: float
+        use_wsv_classification: bool
 
     def __init__(self, config: Configuration) -> None:
 
@@ -129,6 +130,11 @@ class Encoder(torch.nn.Module):
             torch.nn.Linear(config.hidden_dim, config.gst_weights_dim)
         )
 
+        if config.use_wsv_classification:
+            self._wsv_classifier = torch.nn.Linear(config.hidden_dim, config.wsv_weights_dim)
+        else:
+            self._wsv_classifier = None
+
     def forward(self, graph: HeteroData):  # type: ignore
         """Predicts the GST/WSV weights for the sentences in the input graph."""
 
@@ -146,9 +152,14 @@ class Encoder(torch.nn.Module):
                 topk_indices_dict[node_type].append(topk_indices[node_type])
                 router_logits_dict[node_type].append(router_logits[node_type])
 
-        return {
+        outputs = {
             'wsv_logits': self._wsv_predictor(x_dict['word_emb']),
             'gst_logits': self._gst_predictor(x_dict['global_emb']),
             'topk_indices': topk_indices_dict,
             'router_logits': router_logits_dict
         }
+
+        if self._wsv_classifier is not None:
+            outputs['wsv_cl_logits'] = self._wsv_classifier(x_dict['word_emb'])
+
+        return outputs
