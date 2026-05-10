@@ -1,32 +1,19 @@
 """Contains utilities used by trainable models."""
 import logging
 import sys
-from typing import Any
+from typing import TypedDict
 from typing import Dict
-from typing import Iterator
+from typing import Literal
 
 import torch
+from torch_geometric.data import HeteroData
 
 from comp_trans_tts.model import loss as ctt_loss
-
 from paragraph_tts.utils import neural as neural_utils
 
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
-
-
-def optimizer_from_cfg(optimizer_cfg: Dict[str, Any],
-                       parameters: Iterator[torch.nn.Parameter]) -> torch.optim.Optimizer:
-    """Creates optimizer from configuration dictionary."""
-
-    opt_name, opt_params = optimizer_cfg['name'], optimizer_cfg['params']
-
-    if opt_name == 'adam':
-        return torch.optim.Adam(parameters, **opt_params)
-
-    _logger().critical('Unsupported optimizer type: %s', opt_name)
-    sys.exit(1)
 
 
 def calc_decayed_loss_weight(initial_weight: float, decay_rate: float, epoch: int) -> float:
@@ -272,3 +259,102 @@ class AcousticModelMetrics(torch.nn.Module):
             model_output['gst_weights'], k=4)
 
         return metrics
+
+
+class STLPredictorOutput(TypedDict):
+    """Output of the forward pass through the STL predictor."""
+    wsv_logits: torch.Tensor
+    gst_logits: torch.Tensor
+    topk_indices: dict[str, list[torch.Tensor]]
+    router_logits: dict[str, list[torch.Tensor]]
+
+
+class STLPredictorLoss(torch.nn.Module):
+    """Calculates losses w.r.t. the STL predictor's output."""
+
+    def __init__(self,
+                 loss_weights: dict[str, float],
+                 loss_weight_decays: dict[str, float],
+                 preds_loss_mode: Literal['kl-divergence', 'mse']
+                 ) -> None:
+
+        super().__init__()
+
+        self._loss_weights = loss_weights
+        self._loss_weight_decays = loss_weight_decays
+        self._preds_loss_mode = preds_loss_mode
+
+        if preds_loss_mode == 'kl-divergence':
+            self._gst_loss = torch.nn.KLDivLoss(reduction='batchmean')
+            self._wsv_loss = torch.nn.KLDivLoss(reduction='batchmean')
+
+        elif preds_loss_mode == 'mae':
+            self._gst_loss = torch.nn.L1Loss()
+            self._wsv_loss = torch.nn.L1Loss()
+
+        else:
+            _logger().critical('Invalid preds_loss_mode: %s.', preds_loss_mode)
+            sys.exit(1)
+
+    def forward(self,
+                predictions: STLPredictorOutput,
+                batch_graph: HeteroData,
+                epoch: int) -> dict[str, torch.Tensor]:
+        """Computes loss components and total loss for the STL predictor."""
+
+        chosen_gst_logits = predictions['gst_logits'][batch_graph.has_gst_mask]
+        chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
+
+        if self._preds_loss_mode == 'kl-divergence':
+            gst_loss = self._gst_loss(torch.log_softmax(chosen_gst_logits, dim=-1),
+                                      batch_graph.gst_weights)
+            wsv_loss = self._wsv_loss(torch.log_softmax(chosen_wsv_logits, dim=-1),
+                                      batch_graph.wsv_weights)
+
+        else:
+            gst_loss = self._gst_loss(chosen_gst_logits,
+                                      batch_graph.gst_weights)
+            wsv_loss = self._wsv_loss(chosen_wsv_logits,
+                                      batch_graph.wsv_weights)
+
+        load_balancing_losses = {}
+        z_losses = {}
+
+        for node_type in ('word_emb', 'global_emb'):
+
+            for block_idx, (topk_indices, router_logits) in enumerate(
+                zip(predictions['topk_indices'][node_type],
+                    predictions['router_logits'][node_type])
+            ):
+
+                load_balancing_losses[f'moe_lb_loss/{node_type}_block_{block_idx}'] = (
+                    moe_load_balancing_loss(router_logits, topk_indices)
+                )
+
+                z_losses[f'moe_z_loss/{node_type}_block_{block_idx}'] = (
+                    moe_router_z_loss(router_logits)
+                )
+
+        loss_weights = {
+            name: calc_decayed_loss_weight(self._loss_weights[name],
+                                           self._loss_weight_decays[name],
+                                           epoch)
+            for name in self._loss_weights
+        }
+
+        loss_components = {
+            'gst_pred_loss': gst_loss,
+            'wsv_pred_loss': wsv_loss,
+            'moe_lb_loss': sum(load_balancing_losses.values()),
+            'moe_z_loss': sum(z_losses.values())
+        }
+
+        total_loss = sum(loss * loss_weights[name] for name, loss in loss_components.items())
+
+        return {
+            'total_loss': total_loss,
+            'gst_pred_loss': gst_loss,
+            'wsv_pred_loss': wsv_loss,
+            **load_balancing_losses,
+            **z_losses
+        }

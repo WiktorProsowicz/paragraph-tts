@@ -13,13 +13,12 @@ import mlflow
 
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.models import stl_predictor
-from paragraph_tts.layers import stl_predictor as predictor_layers
 from paragraph_tts.data.loading import stl_predictor_ds
 from paragraph_tts.utils.path import stl_predictor_ds_handler
 
 
 def _logger() -> logging.Logger:
-    return logging.getLogger(__name__)
+    return logging.getLogger('paragraph_tts')
 
 
 @hydra.main(version_base=None, config_path='cfg', config_name='train_stl_predictor')
@@ -29,7 +28,7 @@ def main(config: omegaconf.DictConfig) -> None:
     ds_cfg = stl_predictor_ds.STLPredictorDataset.Configuration.model_validate(config.ds_cfg)
     train_cfg = stl_predictor.TrainConfig.model_validate(config.train_cfg)
     optimizer_cfg = stl_predictor.OptimizerConfig.model_validate(config.optimizer_cfg)
-    model_cfg = predictor_layers.Encoder.Configuration.model_validate(config.model_cfg)
+    model_cfg = stl_predictor.ModelConfig.model_validate(config.model_cfg)
 
     ds_path_handler = stl_predictor_ds_handler.STLPredictorDatasetHandler(
         pathlib.Path(config.run_cfg.ds_path)

@@ -6,41 +6,49 @@ run_cfg:
   mlflow_run_id: null
   seed: 2137
   continue_training_from_checkpoint:
-  max_epochs: 10
+  max_epochs: 15
   ds_path: data/stl_predictor_ds/stl_predictor_ds/
-  batch_size: 6
-  save_checkpoints: true
-  num_workers: 16
+  batch_size: 2
+  save_checkpoints: false
+  num_workers: 8
   train_val_split: 0.95
-  accumulate_grad_batches: 1
-  viz_n_batches: 2
-  viz_n_samples_per_batch: 10
-  grad_clip_val: 1.0
+  accumulate_grad_batches: 6
+  viz_n_batches: 6
+  viz_n_samples_per_batch: 2
+  grad_clip_val: 1.5
 
 ds_cfg:
   include_stl_series: faster_bin_diversity_6
 
 optimizer_cfg:
-  learning_rate: 2e-4
+  learning_rate: 6e-4
   weight_decay: 1e-6
   betas: [0.9, 0.98]
   eps: 1e-8
 
 train_cfg:
-  gst_pred_loss_weight: 6.0
-  wsv_pred_loss_weight: 0.3
-  moe_lb_loss_weight: 0.05
-  moe_z_loss_weight: 0.005
+  loss_init_weights:
+    gst_pred_loss: 10.0
+    wsv_pred_loss: 10.0
+    moe_lb_loss: 0.05
+    moe_z_loss: 0.005
+  loss_weight_decays:
+    gst_pred_loss: 1.0
+    wsv_pred_loss: 1.0
+    moe_lb_loss: 1.0
+    moe_z_loss: 1.0
+
 
 model_cfg:
-  input_embedding_dim: 1024
-  hidden_dim: 512
-  num_heads: 8
-  fft_proj_dim: 1024
-  n_experts: 6
-  top_k_experts: 2
-  num_layers: 1
-  gst_weights_dim: 16
-  wsv_weights_dim: 128
-  dropout: 0.1
-
+  encoder:
+    input_embedding_dim: 1024
+    hidden_dim: 1024
+    num_heads: 8
+    fft_proj_dim: 1024
+    n_experts: 6
+    top_k_experts: 2
+    num_layers: 4
+    gst_weights_dim: 16
+    wsv_weights_dim: 128
+    dropout: 0.1
+  output_mode: weights

@@ -1,5 +1,5 @@
 """Contains implementation of the STL predictor model."""
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal
 import pathlib
 
 import pydantic
@@ -28,17 +28,20 @@ class OptimizerConfig(pydantic.BaseModel):
 class TrainConfig(pydantic.BaseModel):
     """Configuration for training the STL predictor."""
 
-    gst_pred_loss_weight: Annotated[float, Field(
-        description="The weight of the GST prediction loss in the total loss.")]
+    loss_init_weights: Annotated[dict[str, float], Field(
+        description='Initial weights for each loss component.')]
 
-    wsv_pred_loss_weight: Annotated[float, Field(
-        description="The weight of the WSV prediction loss in the total loss.")]
+    loss_weight_decays: Annotated[dict[str, float], Field(
+        description='Decay rates for each loss component weights.')]
 
-    moe_lb_loss_weight: Annotated[float, Field(
-        description="The weight of the MoE load balancing loss in the total loss.")]
 
-    moe_z_loss_weight: Annotated[float, Field(
-        description="The weight of the MoE router z-loss in the total loss.")]
+class ModelConfig(pydantic.BaseModel):
+    """Configuration for the STL predictor model."""
+
+    encoder: predictor_layers.Encoder.Configuration
+
+    output_mode: Annotated[Literal['logits', 'weights'], Field(
+        description='Determines the output mode for the predictor.')]
 
 
 class STLPredictor(pl.LightningModule):
@@ -48,16 +51,8 @@ class STLPredictor(pl.LightningModule):
     to compute the GST/WSV embeddings without the reference audio.
     """
 
-    class ForwardOutput(TypedDict):
-        """Output of the forward pass through the STL predictor."""
-
-        wsv_logits: torch.Tensor
-        gst_logits: torch.Tensor
-        topk_indices: dict[str, list[torch.Tensor]]
-        router_logits: dict[str, list[torch.Tensor]]
-
     def __init__(self,
-                 model_cfg: predictor_layers.Encoder.Configuration,
+                 model_cfg: ModelConfig,
                  optimizer_cfg: OptimizerConfig,
                  train_cfg: TrainConfig,
                  viz_n_batches: int,
@@ -65,7 +60,7 @@ class STLPredictor(pl.LightningModule):
 
         super().__init__()
 
-        self._encoder = predictor_layers.Encoder(model_cfg)
+        self._encoder = predictor_layers.Encoder(model_cfg.encoder)
 
         self._model_cfg = model_cfg
         self._optimizer_cfg = optimizer_cfg
@@ -76,8 +71,11 @@ class STLPredictor(pl.LightningModule):
         self.save_hyperparameters(logger=False,
                                   ignore=['viz_n_batches', 'viz_n_samples_per_batch'])
 
-        self._gst_loss = torch.nn.KLDivLoss(reduction='batchmean')
-        self._wsv_loss = torch.nn.KLDivLoss(reduction='batchmean')
+        self._loss = model_utils.STLPredictorLoss(
+            loss_weights=train_cfg.loss_init_weights,
+            loss_weight_decays=train_cfg.loss_weight_decays,
+            preds_loss_mode='kl-divergence' if model_cfg.output_mode == 'logits' else 'mae',
+        )
 
     def configure_optimizers(self):  # type: ignore
 
@@ -85,11 +83,10 @@ class STLPredictor(pl.LightningModule):
                                  lr=self._optimizer_cfg.learning_rate,
                                  weight_decay=self._optimizer_cfg.weight_decay,
                                  betas=self._optimizer_cfg.betas,
-                                 eps=self._optimizer_cfg.eps
-                                 )
+                                 eps=self._optimizer_cfg.eps)
 
     def forward(self,  # pylint: disable=arguments-differ
-                batch_graph: HeteroData) -> ForwardOutput:
+                batch_graph: HeteroData) -> model_utils.STLPredictorOutput:
         """Predicts the GST/WSV weights for the sentences in the input graph."""
 
         return self._encoder(batch_graph)
@@ -99,7 +96,7 @@ class STLPredictor(pl.LightningModule):
         """Training step."""
 
         predictions = self(batch_graph)
-        losses = self._calculate_loss(predictions, batch_graph)
+        losses = self._loss(predictions, batch_graph, epoch=self.current_epoch)
 
         with torch.no_grad():
             metrics = self._calculate_metrics(predictions, batch_graph)
@@ -122,7 +119,7 @@ class STLPredictor(pl.LightningModule):
         """Validation step."""
 
         predictions = self(batch_graph)
-        losses = self._calculate_loss(predictions, batch_graph)
+        losses = self._loss(predictions, batch_graph, epoch=self.current_epoch)
 
         with torch.no_grad():
             metrics = self._calculate_metrics(predictions, batch_graph)
@@ -173,60 +170,20 @@ class STLPredictor(pl.LightningModule):
                      .joinpath(f'batch_{batch_idx}')
                      .joinpath(f'sample_{graph_idx}')))
 
-    def _calculate_loss(self,
-                        predictions: ForwardOutput,
-                        batch_graph: HeteroData) -> dict[str, torch.Tensor]:
-        """Calculates the loss for the given predictions and batch graph."""
-
-        chosen_gst_logits = predictions['gst_logits'][batch_graph.has_gst_mask]
-        chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
-
-        gst_loss = self._gst_loss(torch.log_softmax(chosen_gst_logits, dim=-1),
-                                  batch_graph.gst_weights)
-        wsv_loss = self._wsv_loss(torch.log_softmax(chosen_wsv_logits, dim=-1),
-                                  batch_graph.wsv_weights)
-
-        load_balancing_losses = {}
-        z_losses = {}
-
-        for node_type in ('word_emb', 'global_emb'):
-
-            for block_idx, (topk_indices, router_logits) in enumerate(
-                zip(predictions['topk_indices'][node_type],
-                    predictions['router_logits'][node_type])
-            ):
-
-                load_balancing_losses[f'moe_lb_loss/{node_type}_block_{block_idx}'] = (
-                    model_utils.moe_load_balancing_loss(router_logits, topk_indices)
-                )
-
-                z_losses[f'moe_z_loss/{node_type}_block_{block_idx}'] = (
-                    model_utils.moe_router_z_loss(router_logits)
-                )
-
-        total_loss = (self._train_cfg.gst_pred_loss_weight * gst_loss +
-                      self._train_cfg.wsv_pred_loss_weight * wsv_loss +
-                      self._train_cfg.moe_lb_loss_weight * sum(load_balancing_losses.values()) +
-                      self._train_cfg.moe_z_loss_weight * sum(z_losses.values()))
-
-        return {
-            'total_loss': total_loss,
-            'gst_pred_loss': gst_loss,
-            'wsv_pred_loss': wsv_loss,
-            **load_balancing_losses,
-            **z_losses
-        }
-
     def _calculate_metrics(self,
-                           predictions: ForwardOutput,
+                           predictions: model_utils.STLPredictorOutput,
                            batch_graph: HeteroData) -> dict[str, torch.Tensor]:
         """Calculates the metrics for the given predictions and batch graph."""
 
         chosen_gst_logits = predictions['gst_logits'][batch_graph.has_gst_mask]
         chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
 
-        gst_pred_ae = torch.abs(torch.softmax(chosen_gst_logits, dim=-1) - batch_graph.gst_weights)
-        wsv_pred_ae = torch.abs(torch.softmax(chosen_wsv_logits, dim=-1) - batch_graph.wsv_weights)
+        if self._model_cfg.output_mode == 'logits':
+            chosen_gst_logits = torch.softmax(chosen_gst_logits, dim=-1)
+            chosen_wsv_logits = torch.softmax(chosen_wsv_logits, dim=-1)
+
+        gst_pred_ae = torch.abs(chosen_gst_logits - batch_graph.gst_weights)
+        wsv_pred_ae = torch.abs(chosen_wsv_logits - batch_graph.wsv_weights)
 
         metrics = {
             'gst_pred_mae': gst_pred_ae.mean(),
