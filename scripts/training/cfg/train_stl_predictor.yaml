@@ -16,6 +16,7 @@ run_cfg:
   viz_n_batches: 6
   viz_n_samples_per_batch: 2
   grad_clip_val: 1.5
+  limit_train_batches: null
 
 ds_cfg:
   include_stl_series: faster_bin_diversity_6

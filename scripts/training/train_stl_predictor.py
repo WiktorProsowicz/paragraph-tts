@@ -69,15 +69,22 @@ def main(config: omegaconf.DictConfig) -> None:
         logging_utils.setup_logging('train_stl_predictor')
         _logger().info('Script configuration:\n%s', omegaconf.OmegaConf.to_yaml(config))
 
-        callbacks: list[pl_callbacks.Callback] = []
+        callbacks: list[pl_callbacks.Callback] = [
+            pl_callbacks.EarlyStopping(
+                monitor='val/total_loss',
+                mode='min',
+                patience=3,
+                check_finite=True
+            )
+        ]
 
         if config.run_cfg.save_checkpoints:
             callbacks.append(
                 pl_callbacks.ModelCheckpoint(
                     dirpath=os.path.join(mlflow.get_artifact_uri(), 'checkpoints'),
-                    monitor='epoch',
-                    mode='max',
-                    save_top_k=5,
+                    monitor='val/total_loss',
+                    mode='min',
+                    save_top_k=1,
                     every_n_epochs=1)
             )
 
@@ -90,7 +97,7 @@ def main(config: omegaconf.DictConfig) -> None:
             num_sanity_val_steps=0,
             enable_checkpointing=config.run_cfg.save_checkpoints,
             check_val_every_n_epoch=1,
-            limit_train_batches=None,
+            limit_train_batches=config.run_cfg.limit_train_batches,
             limit_val_batches=None,
             limit_test_batches=None,
             log_every_n_steps=25,
