@@ -5,7 +5,7 @@ import logging
 import torch
 from speechbrain.inference.vocoders import HIFIGAN
 import soundfile
-
+from matplotlib import pyplot as plt
 from torch_dev_utils.tts import visualization as tdu_viz
 from paragraph_tts.utils import inference as inference_utils
 
@@ -151,3 +151,54 @@ def visualize_acoustic_model_outputs(sample: dict[str, torch.Tensor],
     if wav is not None:
         soundfile.write(output_dir.joinpath('target.wav'),
                         wav.squeeze(0).numpy(), 22050)
+
+
+def plot_and_save_gst_prediction(pred_gst_weights: torch.Tensor,
+                                 target_gst_weights: torch.Tensor,
+                                 output_path: pathlib.Path) -> None:
+    """Plots and saves the predicted vs target GST weights."""
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.plot(pred_gst_weights, label='Predicted GST Weights')
+    ax.plot(target_gst_weights, label='Target GST Weights')
+
+    mae = float(torch.mean(torch.abs(pred_gst_weights - target_gst_weights)).item())
+
+    ax.set_title(f'Predicted vs Target GST Weights. MAE={mae:.4f}')
+    ax.set_xlabel('GST Node Index')
+    ax.set_ylabel('Weight Value')
+    ax.legend()
+
+    plt.close(fig)
+    fig.savefig(output_path)
+
+
+def plot_and_save_wsv_prediction(pred_wsv_weights: torch.Tensor,
+                                 target_wsv_weights: torch.Tensor,
+                                 output_path: pathlib.Path) -> None:
+    """Plots and saves the predicted vs target WSV weights."""
+
+    n_words = int(pred_wsv_weights.shape[0])
+
+    fig, axes = plt.subplots(nrows=n_words,
+                             figsize=(8, 3 * n_words),
+                             sharex=True)
+
+    for i in range(n_words):
+
+        axes[i].plot(pred_wsv_weights[i].numpy(), label='Predicted WSV Weights')
+        axes[i].plot(target_wsv_weights[i].numpy(), label='Target WSV Weights')
+
+        mae = float(torch.mean(torch.abs(pred_wsv_weights[i] - target_wsv_weights[i])))
+
+        axes[i].set_title(f'Word {i} WSV Weights. MAE: {mae:.4f}')
+        axes[i].set_ylabel('WSV Weight')
+
+    axes[-1].set_xlabel('Token index')
+    axes[0].legend()
+
+    fig.tight_layout()
+
+    plt.close(fig)
+    fig.savefig(output_path)

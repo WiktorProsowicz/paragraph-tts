@@ -23,7 +23,8 @@ dependencies = [
     "seaborn==0.13.2",
     "scikit-learn==1.7.1",
     "dvc==3.67.1",
-    "dvc-s3==3.3.0"
+    "dvc-s3==3.3.0",
+    "torch_geometric==2.7.0"
 ]
 
 [project.optional-dependencies]

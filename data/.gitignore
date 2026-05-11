@@ -1,4 +1,5 @@
 /librittsr_alignments/
 /librittsr-train/
 /librittsr-test/
-/librittsr-processed
+/librittsr-processed/
+/stl_predictor_ds/

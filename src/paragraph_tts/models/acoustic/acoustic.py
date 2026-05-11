@@ -15,7 +15,8 @@ from speechbrain.inference.vocoders import HIFIGAN
 from paragraph_tts.layers.acoustic import encoder as acoustic_encoder
 from paragraph_tts.layers.acoustic import decoder as acoustic_decoder
 from paragraph_tts.layers.acoustic import context_encoder as acoustic_context_encoder
-from paragraph_tts.models import utils as model_utils
+from paragraph_tts.models.acoustic import utils as model_utils
+from paragraph_tts.utils import neural as neural_utils
 from paragraph_tts.utils import visualization
 
 
@@ -212,22 +213,26 @@ class AcousticModel(pl.LightningModule):
 
             assert wsv_bin_params is not None
 
-            prosody_enc_outputs, enc_output = self._obtain_prosody_encoder_outputs(inputs,
-                                                                                   enc_output,
-                                                                                   wsv_bin_params,
-                                                                                   gst_bin_params)
+            prosody_enc_outputs = self.obtain_prosody_encoder_outputs(inputs,
+                                                                      wsv_bin_params,
+                                                                      gst_bin_params)
+
+            gst_emb = prosody_enc_outputs['gst_emb'].unsqueeze(1).expand_as(enc_output)
+            wsv_emb = prosody_enc_outputs['wsv_emb'][torch.arange(enc_output.size(0)).unsqueeze(1),
+                                                     inputs['word_to_phoneme_indices']]
+
+            enc_output = enc_output + gst_emb + wsv_emb
 
         dec_outputs = self._obtain_decoder_outputs(inputs, use_teacher_forcing, enc_output)
 
         return {**dec_outputs,
                 **prosody_enc_outputs}
 
-    def _obtain_prosody_encoder_outputs(self,
-                                        inputs: dict[str, torch.Tensor],
-                                        enc_output: torch.Tensor,
-                                        wsv_bin_params: ctt_modules.StlBinarizationParams,
-                                        gst_bin_params: ctt_modules.StlBinarizationParams
-                                        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    def obtain_prosody_encoder_outputs(self,
+                                       inputs: dict[str, torch.Tensor],
+                                       wsv_bin_params: ctt_modules.StlBinarizationParams,
+                                       gst_bin_params: ctt_modules.StlBinarizationParams
+                                       ) -> dict[str, torch.Tensor]:
         """Calculates outputs of hierarchical prosody encoder."""
 
         ((gst_emb, gst_weights), (wsv_emb, wsv_weights)) = self._prosody_encoder(
@@ -241,6 +246,12 @@ class AcousticModel(pl.LightningModule):
             global_stl_binarization_params=gst_bin_params
         )
 
+        if wsv_bin_params.hard:
+            gst_emb = gst_emb.detach()
+            wsv_emb = wsv_emb.detach()
+            gst_weights = gst_weights.detach()
+            wsv_weights = wsv_weights.detach()
+
         outputs = {
             'gst_weights': gst_weights,
             'wsv_weights': wsv_weights,
@@ -248,17 +259,7 @@ class AcousticModel(pl.LightningModule):
             'wsv_emb': wsv_emb
         }
 
-        gst_emb = gst_emb.unsqueeze(1).expand_as(enc_output)
-        wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
-                          inputs['word_to_phoneme_indices']]
-
-        if wsv_bin_params.hard:
-            gst_emb = gst_emb.detach()
-            wsv_emb = wsv_emb.detach()
-            gst_weights = gst_weights.detach()
-            wsv_weights = wsv_weights.detach()
-
-        return outputs, enc_output + gst_emb + wsv_emb
+        return outputs
 
     def _obtain_wsv_binarization_params(self) -> ctt_modules.StlBinarizationParams | None:
         """Calculates current binarization parameters for WSV in hierarchical prosody encoder."""
@@ -269,7 +270,7 @@ class AcousticModel(pl.LightningModule):
         if self.current_epoch < self._train_cfg.wsv_bin_hard_start_epoch:
             return ctt_modules.StlBinarizationParams(
                 hard=False,
-                temperature=model_utils.calc_decayed_loss_weight(
+                temperature=neural_utils.calc_decayed_loss_weight(
                     self._train_cfg.wsv_bin_init_temperature,
                     self._train_cfg.wsv_bin_temperature_decay,
                     self.current_epoch
@@ -278,7 +279,7 @@ class AcousticModel(pl.LightningModule):
 
         return ctt_modules.StlBinarizationParams(
             hard=True,
-            temperature=model_utils.calc_decayed_loss_weight(
+            temperature=neural_utils.calc_decayed_loss_weight(
                 self._train_cfg.wsv_bin_init_temperature,
                 self._train_cfg.wsv_bin_temperature_decay,
                 self._train_cfg.wsv_bin_hard_start_epoch
@@ -293,7 +294,7 @@ class AcousticModel(pl.LightningModule):
 
         return ctt_modules.StlBinarizationParams(
             hard=False,
-            temperature=model_utils.calc_decayed_loss_weight(
+            temperature=neural_utils.calc_decayed_loss_weight(
                 self._train_cfg.gst_bin_init_temperature,
                 self._train_cfg.gst_bin_temperature_decay,
                 self.current_epoch

@@ -1,0 +1,51 @@
+acoustic_ds_path: data/librittsr-processed/librittsr_processed/
+mlflow_tracking_uri: http://localhost:5000
+mlflow_artifacts_root: mlflow_artifacts/
+
+inference_resources:
+  faster_bin_diversity_6:
+    experiment_name: proposed_model 
+    run_id: 22138b82f820412abd00aa89249120ab
+    ckpt_name: epoch=6-step=148841.ckpt
+    gst_bin_params:
+      hard: false
+      temperature: 0.043
+    wsv_bin_params:
+      hard: false
+      temperature: 0.043
+
+  faster_bin_diversity_4:
+    experiment_name: proposed_model
+    run_id: 22138b82f820412abd00aa89249120ab
+    ckpt_name: epoch=4-step=106315.ckpt
+    gst_bin_params:
+      hard: false
+      temperature: 0.043
+    wsv_bin_params:
+      hard: false
+      temperature: 0.043
+
+  faster_bin_diversity_2:
+    experiment_name: proposed_model
+    run_id: 5a622aad40124d4ca22bac483aec8fa1
+    ckpt_name: epoch=2-step=63789.ckpt
+    gst_bin_params:
+      hard: false
+      temperature: 0.043
+    wsv_bin_params:
+      hard: false
+      temperature: 0.043
+
+  proposed_fine_tuned_7:
+    experiment_name: proposed_model
+    run_id: 76f7d746d2ce4ea08480f4c4cc166608
+    ckpt_name: epoch=7-step=170104.ckpt
+    gst_bin_params:
+      hard: false
+      temperature: 0.047
+    wsv_bin_params:
+      hard: false
+      temperature: 0.047
+
+embedder_device: cuda
+output_dir: tmp/stl_predictor_ds/

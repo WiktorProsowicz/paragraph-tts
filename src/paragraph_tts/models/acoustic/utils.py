@@ -1,37 +1,15 @@
 """Contains utilities used by trainable models."""
 import logging
-import sys
-from typing import Any
 from typing import Dict
-from typing import Iterator
 
 import torch
 
 from comp_trans_tts.model import loss as ctt_loss
-
 from paragraph_tts.utils import neural as neural_utils
 
 
 def _logger() -> logging.Logger:
     return logging.getLogger(__name__)
-
-
-def optimizer_from_cfg(optimizer_cfg: Dict[str, Any],
-                       parameters: Iterator[torch.nn.Parameter]) -> torch.optim.Optimizer:
-    """Creates optimizer from configuration dictionary."""
-
-    opt_name, opt_params = optimizer_cfg['name'], optimizer_cfg['params']
-
-    if opt_name == 'adam':
-        return torch.optim.Adam(parameters, **opt_params)
-
-    _logger().critical('Unsupported optimizer type: %s', opt_name)
-    sys.exit(1)
-
-
-def calc_decayed_loss_weight(initial_weight: float, decay_rate: float, epoch: int) -> float:
-    """Calculates decayed loss weight based on initial weight, decay rate and current epoch."""
-    return initial_weight * (decay_rate ** epoch)
 
 
 class AcousticModelLoss(torch.nn.Module):
@@ -91,10 +69,10 @@ class AcousticModelLoss(torch.nn.Module):
         if 'gst_entropy_loss' in self._loss_weights:
             weight_decay_epochs['gst_entropy_loss'] = epoch - self._gst_entropy_loss_start_epoch
 
-        return {loss_name: calc_decayed_loss_weight(self._loss_weights[loss_name],
-                                                    self._loss_weight_decays[loss_name],
-                                                    weight_decay_epochs[loss_name])
-                for loss_name in self._loss_weights}
+        return {name: neural_utils.calc_decayed_loss_weight(self._loss_weights[name],
+                                                            self._loss_weight_decays[name],
+                                                            weight_decay_epochs[name])
+                for name in self._loss_weights}
 
     def _calculate_total_loss(self, losses: dict[str, torch.Tensor], epoch: int) -> torch.Tensor:
         """Calculates total loss as a weighted sum of individual losses."""

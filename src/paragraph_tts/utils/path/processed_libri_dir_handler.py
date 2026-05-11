@@ -104,6 +104,12 @@ class ProcessedLibriDirHandler:
         self._root_path = ds_path
         self._speakers_path = ds_path / 'speakers'
 
+    @property
+    def processor_cfg_pth(self) -> pathlib.Path:
+        """Path to the processor config file in the processed dataset."""
+
+        return self._root_path / 'processor_cfg.yaml'
+
     def create_new_paragraph(self,
                              raw_paragraph: raw_libri_dir_handler.ParagraphInfo,
                              utterances: list[raw_libri_dir_handler.UtteranceInfo]
@@ -193,6 +199,17 @@ class ProcessedLibriDirHandler:
 
         return paragraphs_dir.is_dir() and any(paragraphs_dir.iterdir())
 
+    def iter_paragraphs(self, speaker_id: int | None = None) -> Iterator[ProcessedParagraph]:
+        """Iterates over all paragraphs in the dataset."""
+
+        for spk_id in self._iter_speakers() if speaker_id is None else [speaker_id]:
+
+            spk_path = self._speakers_path / str(spk_id)
+            paragraphs_path = spk_path / 'paragraphs'
+
+            for paragraph_dir in sorted(paragraphs_path.iterdir()):
+                yield self._obtain_paragraph(paragraph_dir)
+
     def iter_utterances(self, speaker_id: int | None = None) -> Iterator[ProcessedUtterance]:
         """Iterates over all utterances in the dataset."""
 
@@ -273,6 +290,8 @@ class ProcessedLibriDirHandler:
                     utterance_pos=SentencePosType.from_utt_id(raw_utt_info.utt_id,
                                                               len(raw_paragraph.utterances))
                 ))
+
+        paragraph.utterances.sort(key=lambda utt: utt.raw_utterance.utt_id)
 
         return paragraph
 

@@ -16,7 +16,7 @@ from lightning.pytorch import profilers as pl_profilers
 import torch
 
 from paragraph_tts.data.loading import processed_librittsr as data_loading
-from paragraph_tts.models import acoustic as acoustic_model
+from paragraph_tts.models.acoustic import acoustic as acoustic_model
 from paragraph_tts.utils.path import processed_libri_dir_handler
 
 
