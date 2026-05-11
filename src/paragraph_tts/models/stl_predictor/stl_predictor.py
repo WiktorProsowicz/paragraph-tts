@@ -104,7 +104,7 @@ class STLPredictor(pl.LightningModule):
         if self._model_cfg.output_mode == 'classification-plus-weights':
 
             pos_wsv_mask = (torch.nn.functional.sigmoid(outputs['wsv_cl_logits']) > 0.5).float()
-            outputs['final_wsv_weights'] = outputs['wsv_logits'] * pos_wsv_mask
+            outputs['final_wsv_weights'] = torch.relu(outputs['wsv_logits']) * pos_wsv_mask
             outputs['final_gst_weights'] = torch.softmax(outputs['gst_logits'], dim=-1)
 
         elif self._model_cfg.output_mode == 'logits':

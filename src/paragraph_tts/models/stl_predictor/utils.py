@@ -136,8 +136,8 @@ class STLPredictorLoss(torch.nn.Module):
             pos_weight=self._wsv_cl_pos_weight
         )
 
-        wsv_pred_loss = torch.nn.functional.l1_loss(
-            chosen_wsv_logits[pos_wsv_mask],
+        wsv_pred_loss = torch.nn.functional.mse_loss(
+            torch.relu(chosen_wsv_logits)[pos_wsv_mask],
             batch_graph.wsv_weights[pos_wsv_mask]
         )
 

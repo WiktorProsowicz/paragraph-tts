@@ -30,7 +30,7 @@ optimizer_cfg:
 train_cfg:
   loss_init_weights:
     gst_pred_loss: 8.0
-    wsv_pred_loss: 10.0
+    wsv_pred_loss: 15.0
     moe_lb_loss: 0.05
     moe_z_loss: 0.005
     wsv_cl_loss: 1.0
