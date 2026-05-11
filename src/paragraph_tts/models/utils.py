@@ -305,23 +305,23 @@ class STLPredictorLoss(torch.nn.Module):
         loss_components = {}
 
         if self._model_output_mode == 'logits':
-            loss_components['gst_loss'] = torch.nn.functional.kl_div(
+            loss_components['gst_pred_loss'] = torch.nn.functional.kl_div(
                 torch.log_softmax(chosen_gst_logits, dim=-1),
                 batch_graph.gst_weights,
                 reduction='batchmean')
-            loss_components['wsv_loss'] = torch.nn.functional.kl_div(
+            loss_components['wsv_pred_loss'] = torch.nn.functional.kl_div(
                 torch.log_softmax(chosen_wsv_logits, dim=-1),
                 batch_graph.wsv_weights,
                 reduction='batchmean')
 
         elif self._model_output_mode == 'weights':
-            loss_components['gst_loss'] = torch.nn.functional.l1_loss(chosen_gst_logits,
-                                                                      batch_graph.gst_weights)
-            loss_components['wsv_loss'] = torch.nn.functional.l1_loss(chosen_wsv_logits,
-                                                                      batch_graph.wsv_weights)
+            loss_components['gst_pred_loss'] = torch.nn.functional.l1_loss(chosen_gst_logits,
+                                                                           batch_graph.gst_weights)
+            loss_components['wsv_pred_loss'] = torch.nn.functional.l1_loss(chosen_wsv_logits,
+                                                                           batch_graph.wsv_weights)
 
         else:
-            loss_components['gst_loss'] = torch.nn.functional.kl_div(
+            loss_components['gst_pred_loss'] = torch.nn.functional.kl_div(
                 torch.log_softmax(chosen_gst_logits, dim=-1),
                 batch_graph.gst_weights,
                 reduction='batchmean'
@@ -334,7 +334,7 @@ class STLPredictorLoss(torch.nn.Module):
                 pos_wsv_mask.float(),
                 pos_weight=self._wsv_cl_pos_weight
             )
-            loss_components['wsv_loss'] = torch.nn.functional.l1_loss(
+            loss_components['wsv_pred_loss'] = torch.nn.functional.l1_loss(
                 chosen_wsv_logits[pos_wsv_mask],
                 batch_graph.wsv_weights[pos_wsv_mask]
             )

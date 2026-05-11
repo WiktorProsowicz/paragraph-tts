@@ -97,10 +97,8 @@ class STLPredictor(pl.LightningModule):
 
         if self._model_cfg.output_mode == 'classification-plus-weights':
 
-            pos_wsv_mask = (outputs['wsv_cl_logits'] > 0.5).float()
-            wsv_weights = torch.softmax(outputs['wsv_logits'], dim=-1)
-
-            outputs['final_wsv_weights'] = wsv_weights * pos_wsv_mask.unsqueeze(-1)
+            pos_wsv_mask = (torch.nn.functional.sigmoid(outputs['wsv_cl_logits']) > 0.5).float()
+            outputs['final_wsv_weights'] = outputs['wsv_logits'] * pos_wsv_mask
             outputs['final_gst_weights'] = torch.softmax(outputs['gst_logits'], dim=-1)
 
         elif self._model_cfg.output_mode == 'logits':
@@ -111,6 +109,8 @@ class STLPredictor(pl.LightningModule):
         else:
             outputs['final_wsv_weights'] = outputs['wsv_logits']
             outputs['final_gst_weights'] = outputs['gst_logits']
+
+        return outputs
 
     def training_step(self,  # pylint: disable=arguments-differ
                       batch_graph: HeteroData) -> torch.Tensor:
