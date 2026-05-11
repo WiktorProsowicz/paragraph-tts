@@ -12,7 +12,7 @@ from lightning.pytorch import loggers as pl_loggers
 import mlflow
 
 from paragraph_tts.utils import logging_utils
-from paragraph_tts.models import stl_predictor
+from paragraph_tts.models.stl_predictor import stl_predictor
 from paragraph_tts.data.loading import stl_predictor_ds
 from paragraph_tts.utils.path import stl_predictor_ds_handler
 

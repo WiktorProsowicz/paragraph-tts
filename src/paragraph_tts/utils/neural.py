@@ -2,6 +2,11 @@
 import torch
 
 
+def calc_decayed_loss_weight(initial_weight: float, decay_rate: float, epoch: int) -> float:
+    """Calculates decayed loss weight based on initial weight, decay rate and current epoch."""
+    return initial_weight * (decay_rate ** epoch)
+
+
 def binary_mask_from_lengths(lengths: torch.Tensor) -> torch.Tensor:
     """Creates binary mask from a batch of lengths."""
 

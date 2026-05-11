@@ -15,7 +15,8 @@ from speechbrain.inference.vocoders import HIFIGAN
 from paragraph_tts.layers.acoustic import encoder as acoustic_encoder
 from paragraph_tts.layers.acoustic import decoder as acoustic_decoder
 from paragraph_tts.layers.acoustic import context_encoder as acoustic_context_encoder
-from paragraph_tts.models import utils as model_utils
+from paragraph_tts.models.acoustic import utils as model_utils
+from paragraph_tts.utils import neural as neural_utils
 from paragraph_tts.utils import visualization
 
 
@@ -269,7 +270,7 @@ class AcousticModel(pl.LightningModule):
         if self.current_epoch < self._train_cfg.wsv_bin_hard_start_epoch:
             return ctt_modules.StlBinarizationParams(
                 hard=False,
-                temperature=model_utils.calc_decayed_loss_weight(
+                temperature=neural_utils.calc_decayed_loss_weight(
                     self._train_cfg.wsv_bin_init_temperature,
                     self._train_cfg.wsv_bin_temperature_decay,
                     self.current_epoch
@@ -278,7 +279,7 @@ class AcousticModel(pl.LightningModule):
 
         return ctt_modules.StlBinarizationParams(
             hard=True,
-            temperature=model_utils.calc_decayed_loss_weight(
+            temperature=neural_utils.calc_decayed_loss_weight(
                 self._train_cfg.wsv_bin_init_temperature,
                 self._train_cfg.wsv_bin_temperature_decay,
                 self._train_cfg.wsv_bin_hard_start_epoch
@@ -293,7 +294,7 @@ class AcousticModel(pl.LightningModule):
 
         return ctt_modules.StlBinarizationParams(
             hard=False,
-            temperature=model_utils.calc_decayed_loss_weight(
+            temperature=neural_utils.calc_decayed_loss_weight(
                 self._train_cfg.gst_bin_init_temperature,
                 self._train_cfg.gst_bin_temperature_decay,
                 self.current_epoch

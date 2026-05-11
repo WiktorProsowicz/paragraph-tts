@@ -12,7 +12,7 @@ from comp_trans_tts.model import modules as ctt_modules
 
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.utils.path import processed_libri_dir_handler
-from paragraph_tts.models import acoustic as acoustic_models
+from paragraph_tts.models.acoustic import acoustic as acoustic_models
 from paragraph_tts.data.preprocessing import stl_predictor_ds_processor
 
 

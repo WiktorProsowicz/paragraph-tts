@@ -10,7 +10,7 @@ from torch_geometric.data import HeteroData
 import mlflow
 
 from paragraph_tts.layers import stl_predictor as predictor_layers
-from paragraph_tts.models import utils as model_utils
+from paragraph_tts.models.stl_predictor import utils as model_utils
 from paragraph_tts.data.loading import stl_predictor_ds
 from paragraph_tts.utils.path import stl_predictor_ds_handler
 from paragraph_tts.utils import visualization as viz_utils
