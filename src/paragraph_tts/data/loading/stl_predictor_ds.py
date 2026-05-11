@@ -111,6 +111,7 @@ class STLPredictorDataModule(pl.LightningDataModule):
                  config: STLPredictorDataset.Configuration,
                  batch_size: int,
                  num_workers: int,
+                 train_val_split: float,
                  seed: int):
 
         super().__init__()
@@ -119,6 +120,7 @@ class STLPredictorDataModule(pl.LightningDataModule):
         self._config = config
         self._batch_size = batch_size
         self._num_workers = num_workers
+        self._train_val_split = train_val_split
         self._seed = seed
 
         self._train_ds: STLPredictorDataset | None = None
@@ -136,7 +138,7 @@ class STLPredictorDataModule(pl.LightningDataModule):
 
         np.random.RandomState(self._seed).shuffle(all_samples)  # pylint: disable=no-member
 
-        train_size = int(0.8 * len(all_samples))
+        train_size = int(self._train_val_split * len(all_samples))
         train_samples = all_samples[:train_size]
         val_samples = all_samples[train_size:]
 

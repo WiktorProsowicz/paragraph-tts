@@ -37,6 +37,9 @@ class TrainConfig(pydantic.BaseModel):
     wsv_cl_pos_weight: Annotated[float | None, Field(
         description='Positive class weight for the WSV classification loss.')]
 
+    wsv_cl_eps: Annotated[float | None, Field(
+        description='Epsilon value for the WSV classification loss to detect positive weights.')]
+
 
 class ModelConfig(pydantic.BaseModel):
     """Configuration for the STL predictor model."""
@@ -78,8 +81,11 @@ class STLPredictor(pl.LightningModule):
             loss_weights=train_cfg.loss_init_weights,
             loss_weight_decays=train_cfg.loss_weight_decays,
             model_output_mode=model_cfg.output_mode,
-            wsv_cl_pos_weight=train_cfg.wsv_cl_pos_weight
+            wsv_cl_pos_weight=train_cfg.wsv_cl_pos_weight,
+            wsv_cl_eps=train_cfg.wsv_cl_eps
         )
+
+        self._metrics = model_utils.STLPredictorMetrics(wsv_cl_eps=train_cfg.wsv_cl_eps)
 
     def configure_optimizers(self):  # type: ignore
 
@@ -120,7 +126,7 @@ class STLPredictor(pl.LightningModule):
         losses = self._loss(predictions, batch_graph, epoch=self.current_epoch)
 
         with torch.no_grad():
-            metrics = self._calculate_metrics(predictions, batch_graph)
+            metrics = self._metrics(predictions, batch_graph, include_moe_metrics=False)
 
         self.log_dict({f'train/{key}': value for key, value in losses.items()},
                       on_step=True,
@@ -143,7 +149,7 @@ class STLPredictor(pl.LightningModule):
         losses = self._loss(predictions, batch_graph, epoch=self.current_epoch)
 
         with torch.no_grad():
-            metrics = self._calculate_metrics(predictions, batch_graph)
+            metrics = self._metrics(predictions, batch_graph, include_moe_metrics=True)
 
         self.log_dict({f"val/{key}": value for key, value in losses.items()},
                       on_step=False,
@@ -190,43 +196,6 @@ class STLPredictor(pl.LightningModule):
                      .joinpath(f'epoch_{self.current_epoch}')
                      .joinpath(f'batch_{batch_idx}')
                      .joinpath(f'sample_{graph_idx}')))
-
-    def _calculate_metrics(self,
-                           predictions: model_utils.STLPredictorOutput,
-                           batch_graph: HeteroData) -> dict[str, torch.Tensor]:
-        """Calculates the metrics for the given predictions and batch graph."""
-
-        chosen_gst_weights = predictions['final_gst_weights'][batch_graph.has_gst_mask]
-        chosen_wsv_weights = predictions['final_wsv_weights'][batch_graph.has_wsv_mask]
-
-        gst_pred_ae = torch.abs(chosen_gst_weights - batch_graph.gst_weights)
-        wsv_pred_ae = torch.abs(chosen_wsv_weights - batch_graph.wsv_weights)
-
-        metrics = {
-            'gst_pred_mae': gst_pred_ae.mean(),
-            'wsv_pred_mae': wsv_pred_ae.mean(),
-            'gst_pred_mae_weighted': (gst_pred_ae * batch_graph.gst_weights).sum(-1).mean(),
-            'wsv_pred_mae_weighted': (wsv_pred_ae * batch_graph.wsv_weights).sum(-1).mean()
-        }
-
-        moe_expert_usage = {}
-
-        for node_type in ('word_emb', 'global_emb'):
-
-            for block_idx, (topk_indices, router_logits) in enumerate(
-                zip(predictions['topk_indices'][node_type],
-                    predictions['router_logits'][node_type])
-            ):
-
-                moe_expert_usage[f'{node_type}/block_{block_idx}'] = (
-                    model_utils.moe_expert_usage(router_logits, topk_indices)
-                )
-
-        for key, expert_usage in moe_expert_usage.items():
-            metrics[f'experts_usage/{key}_max'] = expert_usage.max()
-            metrics[f'experts_usage/{key}_min'] = expert_usage.min()
-
-        return metrics
 
     def _visualize_predictions(self,
                                graph: HeteroData,

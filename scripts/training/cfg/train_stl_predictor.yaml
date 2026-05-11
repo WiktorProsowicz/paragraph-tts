@@ -33,14 +33,15 @@ train_cfg:
     wsv_pred_loss: 10.0
     moe_lb_loss: 0.05
     moe_z_loss: 0.005
-    wsv_cl_loss: 0.6
+    wsv_cl_loss: 1.0
   loss_weight_decays:
     gst_pred_loss: 1.0
     wsv_pred_loss: 1.0
     moe_lb_loss: 1.0
     moe_z_loss: 1.0
     wsv_cl_loss: 1.0
-  wsv_cl_pos_weight: 20.0
+  wsv_cl_pos_weight: 13.2
+  wsv_cl_eps: 0.005
 
 model_cfg:
   encoder:

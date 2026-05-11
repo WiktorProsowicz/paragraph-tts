@@ -34,11 +34,14 @@ def main(config: omegaconf.DictConfig) -> None:
         pathlib.Path(config.run_cfg.ds_path)
     )
 
-    data_module = stl_predictor_ds.STLPredictorDataModule(ds_path_handler,
-                                                          ds_cfg,
-                                                          batch_size=config.run_cfg.batch_size,
-                                                          num_workers=config.run_cfg.num_workers,
-                                                          seed=config.run_cfg.seed)
+    data_module = stl_predictor_ds.STLPredictorDataModule(
+        ds_path_handler,
+        ds_cfg,
+        batch_size=config.run_cfg.batch_size,
+        num_workers=config.run_cfg.num_workers,
+        train_val_split=config.run_cfg.train_val_split,
+        seed=config.run_cfg.seed
+    )
 
     model = stl_predictor.STLPredictor(
         model_cfg=model_cfg,

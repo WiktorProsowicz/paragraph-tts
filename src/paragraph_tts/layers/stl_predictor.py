@@ -60,7 +60,7 @@ class _GATTransformerLayer(torch.nn.Module):
     def forward(self, x_dict, edge_index_dict):  # type: ignore
         """Performs a forward pass through the GAT-based transformer layer."""
 
-        original_x_dict = {x_type: x for x_type, x in x_dict.items()}
+        original_x_dict = dict(x_dict.items())
         top_k_indices_dict = {}
         router_logits_dict = {}
 
