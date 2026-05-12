@@ -15,6 +15,7 @@ class EvalUtterance(pydantic.BaseModel):
     eval_paragraph: 'EvalParagraph'
     raw_utterance: raw_libri_dir_handler.UtteranceInfo | None
     tensors_paths: dict[str, pathlib.Path]
+    gt_wav_path: pathlib.Path
 
 
 class EvalParagraph(pydantic.BaseModel):
@@ -63,7 +64,7 @@ class EvalDsHandler:
         paragraph_path.mkdir(parents=True, exist_ok=True)
 
         with paragraph_path.joinpath('raw_paragraph.json').open('w') as f:
-            json.dump(paragraph_info.model_dump(), f)
+            json.dump(paragraph_info.model_dump(), f, indent=4, ensure_ascii=False)
 
         paragraph_path.joinpath('utt').joinpath('0').mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +81,7 @@ class EvalDsHandler:
         paragraph_path.mkdir(parents=True, exist_ok=True)
 
         with paragraph_path.joinpath('raw_paragraph.json').open('w') as f:
-            json.dump(paragraph_info.model_dump(), f)
+            json.dump(paragraph_info.model_dump(), f, indent=4, ensure_ascii=False)
 
         for utt in paragraph_info.utterances:
             if utt.wav_path is not None:
@@ -88,7 +89,7 @@ class EvalDsHandler:
                 utt_path.mkdir(parents=True, exist_ok=True)
 
                 with utt_path.joinpath('raw_utterance.json').open('w') as f:
-                    json.dump(utt.model_dump(), f)
+                    json.dump(utt.model_dump(), f, indent=4, ensure_ascii=False)
 
         return self._load_paragraph(paragraph_path)
 
@@ -125,6 +126,7 @@ class EvalDsHandler:
 
             eval_paragraph.utterances.append(
                 EvalUtterance(
+                    eval_paragraph=eval_paragraph,
                     raw_utterance=raw_utt,
                     tensors_paths={
                         'input_word_emb': utt_path.joinpath('input_word_emb.pt'),
@@ -134,7 +136,8 @@ class EvalDsHandler:
                         'word_to_phoneme_indices': utt_path.joinpath('word_phone_indices.pt'),
                         'sentence_pos': utt_path.joinpath('sentence_pos.pt'),
                         'spk_rate': utt_path.joinpath('spk_rate.pt')
-                    })
+                    },
+                    gt_wav_path=utt_path.joinpath('gt.wav'))
             )
 
         eval_paragraph.utterances.sort(

@@ -40,8 +40,8 @@ def main(cfg: omegaconf.DictConfig) -> None:
     )
 
     processor.prepare_dataset(pathlib.Path(cfg.output_dir),
-                              max_partial_paragraphs=cfg.max_partial_paragraphs,
-                              max_whole_paragraphs=cfg.max_whole_paragraphs)
+                              max_partial_paras_with_n_sents=cfg.max_partial_paras_with_n_sents,
+                              max_whole_paras_with_n_sents=cfg.max_whole_paras_with_n_sents)
 
 
 if __name__ == '__main__':

@@ -6,5 +6,12 @@ processor_cfg:
   bert_model_tag: microsoft/deberta-v3-large
   embedder_device: cuda
   spec_frames_per_second: 86
-max_partial_paragraphs: 10
-max_whole_paragraphs: 30
+max_partial_paras_with_n_sents:
+  3: 5
+  4: 5
+max_whole_paras_with_n_sents:
+  1: 5
+  2: 5
+  3: 5
+  4: 5
+  5: 5

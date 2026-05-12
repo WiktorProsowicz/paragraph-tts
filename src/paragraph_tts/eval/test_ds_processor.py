@@ -9,10 +9,13 @@ import random
 import pydantic
 from pydantic import Field
 import torch
+import soundfile
+import numpy as np
 
 from torch_dev_utils.tts import text_prep
 from torch_dev_utils.text_preprocessing import embeddings
 from torch_dev_utils.tts import alignment_prep
+
 from paragraph_tts.data.preprocessing import audio as audio_prep
 from paragraph_tts.utils.path import raw_libri_dir_handler
 from paragraph_tts.utils.path import alignments_dir_handler
@@ -71,8 +74,8 @@ class TestDsProcessor:
 
     def prepare_dataset(self,
                         output_dir: pathlib.Path,
-                        max_partial_paragraphs: int,
-                        max_whole_paragraphs: int) -> None:
+                        max_partial_paras_with_n_sents: dict[int, int],
+                        max_whole_paras_with_n_sents: dict[int, int]) -> None:
         """Prepares evaluation dataset."""
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -95,13 +98,44 @@ class TestDsProcessor:
             else:
                 partial_paragraphs.append(paragraph)
 
-        for paragraph in tqdm.tqdm(partial_paragraphs[:max_partial_paragraphs],
+        partial_paragraphs = self._filter_paragraphs_by_num_sentences(
+            partial_paragraphs, max_partial_paras_with_n_sents)
+
+        whole_paragraphs = self._filter_paragraphs_by_num_sentences(
+            whole_paragraphs, max_whole_paras_with_n_sents)
+
+        for paragraph in tqdm.tqdm(partial_paragraphs,
                                    desc='Preparing partial paragraphs'):
             self._prepare_paragraph_parts(paragraph, eval_dataset_handler)
 
-        for paragraph in tqdm.tqdm(whole_paragraphs[:max_whole_paragraphs],
+        for paragraph in tqdm.tqdm(whole_paragraphs,
                                    desc='Preparing whole paragraphs'):
             self._prepare_whole_paragraph(paragraph, eval_dataset_handler)
+
+    def _filter_paragraphs_by_num_sentences(self,
+                                            paragraphs: list[raw_libri_dir_handler.ParagraphInfo],
+                                            max_paras_per_sentence_count: dict[int, int]
+                                            ) -> list[raw_libri_dir_handler.ParagraphInfo]:
+        """Filters paragraphs by the number of sentences they contain."""
+
+        sentence_count_to_paragraphs: dict[int, list[raw_libri_dir_handler.ParagraphInfo]] = {
+            count: [] for count in max_paras_per_sentence_count
+        }
+
+        for paragraph in paragraphs:
+
+            sentence_count = len(paragraph.utterances)
+
+            if sentence_count in sentence_count_to_paragraphs:
+                sentence_count_to_paragraphs[sentence_count].append(paragraph)
+
+        filtered_paragraphs: list[raw_libri_dir_handler.ParagraphInfo] = []
+
+        for sentence_count, paras in sentence_count_to_paragraphs.items():
+
+            filtered_paragraphs.extend(paras[:max_paras_per_sentence_count[sentence_count]])
+
+        return filtered_paragraphs
 
     def _prepare_whole_paragraph(self,
                                  paragraph: raw_libri_dir_handler.ParagraphInfo,
@@ -144,6 +178,11 @@ class TestDsProcessor:
             'word_to_phoneme_indices': torch.cat(word_phone_indices_list)
         }
 
+        wav_parts = [audio_prep.load_wav_raw(utt.wav_path) for utt in paragraph.utterances]
+
+        with eval_para.utterances[0].gt_wav_path.open('wb') as f:
+            soundfile.write(f, np.concat(wav_parts, axis=0), samplerate=22050)
+
         for feature_name, feature_tensor in utt_data.items():
             torch.save(feature_tensor, eval_para.utterances[0].tensors_paths[feature_name])
 
@@ -165,6 +204,11 @@ class TestDsProcessor:
 
             for feature_name, feature_tensor in utt_data.tensors.items():
                 torch.save(feature_tensor, eval_utt.tensors_paths[feature_name])
+
+            with eval_utt.gt_wav_path.open('wb') as f:
+                soundfile.write(f,
+                                audio_prep.load_wav_raw(eval_utt.raw_utterance.wav_path),
+                                samplerate=22050)
 
         self._save_graph_features(eval_para, para_data)
 
