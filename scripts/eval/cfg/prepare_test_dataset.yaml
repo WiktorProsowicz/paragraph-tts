@@ -1,0 +1,10 @@
+raw_ds_path: data/librittsr-test/LibriTTS_R/
+choose_splits: [test-clean]
+alignments_dir: data/librittsr_alignments/
+output_dir: tmp/eval_ds/
+processor_cfg:
+  bert_model_tag: microsoft/deberta-v3-large
+  embedder_device: cuda
+  spec_frames_per_second: 86
+max_partial_paragraphs: 10
+max_whole_paragraphs: 30

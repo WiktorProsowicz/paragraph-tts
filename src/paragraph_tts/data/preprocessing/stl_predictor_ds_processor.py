@@ -101,7 +101,24 @@ class STLPredictorDatasetProcessor:
                                         desc='Preparing graph associations',
                                         unit='paragraph'):
 
-            self._prepare_graph_associations_for_paragraph(processed_para)
+            para_text_features: list[text_prep.TextFeatures] = []
+
+            for utterance in processed_para.utterances:
+
+                with open(utterance.text_features_pth, 'rb') as f:
+                    text_features: text_prep.TextFeatures = pickle.load(f)
+
+                para_text_features.append(text_features)
+
+            GraphAssociationsProcessor(
+                {
+                    'local_prev_edge_idx_pth': processed_para.local_prev_edge_idx_pth,
+                    'local_next_edge_idx_pth': processed_para.local_next_edge_idx_pth,
+                    'global_prev_edge_idx_pth': processed_para.global_prev_edge_idx_pth,
+                    'global_next_edge_idx_pth': processed_para.global_next_edge_idx_pth,
+                    'local_global_edge_idx_pth': processed_para.local_global_edge_idx_pth
+                }
+            ).prepare_graph_associations_for_paragraph(para_text_features)
 
     def _prepare_utterance_draft(self,
                                  utterance: stl_predictor_ds_handler.ProcessedUtterance) -> None:
@@ -187,34 +204,43 @@ class STLPredictorDatasetProcessor:
         torch.save(wsv_weights, utterance.stl_weights[stl_series].wsv_path)
         torch.save(gst_weights, utterance.stl_weights[stl_series].gst_path)
 
-    def _prepare_graph_associations_for_paragraph(
+
+class GraphAssociationsProcessor:
+    """Prepares graph edges for the STL predictor dataset."""
+
+    def __init__(self,
+                 graph_features_paths: dict[str, pathlib.Path]):
+        """Init.
+
+        Args:
+            graph_features_paths: A dictionary mapping graph feature names to their paths.
+                See: stl_predictor_ds_handler.ProcessedParagraph.
+        """
+
+        self._graph_features_paths = graph_features_paths
+
+    def prepare_graph_associations_for_paragraph(
         self,
-            paragraph: stl_predictor_ds_handler.ProcessedParagraph
+            utterances_text_features: list[text_prep.TextFeatures]
     ) -> None:
         """Prepares the graph associations between nodes for a single paragraph."""
 
         sentence_lengths: list[int] = []
 
-        for utterance in paragraph.utterances:
-            with open(utterance.text_features_pth, 'rb') as f:
-                text_features: text_prep.TextFeatures = pickle.load(f)
+        for text_features in utterances_text_features:
 
             sentence_lengths.append(len(text_features.words))
 
         word_indices = np.split(np.arange(sum(sentence_lengths)),
                                 np.cumsum(sentence_lengths)[:-1])
 
-        sentence_indices = np.arange(len(paragraph.utterances))
+        sentence_indices = np.arange(len(utterances_text_features))
 
-        self._prepare_local_graph_associations(paragraph, word_indices)
-        self._prepare_global_graph_associations(paragraph, sentence_indices)
-        self._prepare_hybrid_graph_associations(paragraph, word_indices, sentence_indices)
+        self._prepare_local_graph_associations(word_indices)
+        self._prepare_global_graph_associations(sentence_indices)
+        self._prepare_hybrid_graph_associations(word_indices, sentence_indices)
 
-    def _prepare_local_graph_associations(
-        self,
-        paragraph: stl_predictor_ds_handler.ProcessedParagraph,
-        word_indices: list[np.ndarray],
-    ) -> None:
+    def _prepare_local_graph_associations(self, word_indices: list[np.ndarray]) -> None:
         """Prepares the local graph associations between nodes for a single paragraph."""
 
         local_prev_edge_idx = []
@@ -233,14 +259,12 @@ class STLPredictorDatasetProcessor:
                 local_next_edge_idx.append(np.array([next_indices,
                                                      np.repeat(word_id, len(next_indices))]))
 
-        torch.save(_cat_edge_indices(local_prev_edge_idx), paragraph.local_prev_edge_idx_pth)
-        torch.save(_cat_edge_indices(local_next_edge_idx), paragraph.local_next_edge_idx_pth)
+        torch.save(_cat_edge_indices(local_prev_edge_idx),
+                   self._graph_features_paths['local_prev_edge_idx_pth'])
+        torch.save(_cat_edge_indices(local_next_edge_idx),
+                   self._graph_features_paths['local_next_edge_idx_pth'])
 
-    def _prepare_global_graph_associations(
-        self,
-        paragraph: stl_predictor_ds_handler.ProcessedParagraph,
-        sentence_indices: np.ndarray
-    ) -> None:
+    def _prepare_global_graph_associations(self, sentence_indices: np.ndarray) -> None:
         """Prepares the global graph associations between nodes for a single paragraph."""
 
         global_prev_sent_edge_idx = []
@@ -261,11 +285,12 @@ class STLPredictorDatasetProcessor:
                           np.repeat(sent_idx, len(next_sent_indices))])
             )
 
-        torch.save(_cat_edge_indices(global_prev_sent_edge_idx), paragraph.global_prev_edge_idx_pth)
-        torch.save(_cat_edge_indices(global_next_sent_edge_idx), paragraph.global_next_edge_idx_pth)
+        torch.save(_cat_edge_indices(global_prev_sent_edge_idx),
+                   self._graph_features_paths['global_prev_edge_idx_pth'])
+        torch.save(_cat_edge_indices(global_next_sent_edge_idx),
+                   self._graph_features_paths['global_next_edge_idx_pth'])
 
     def _prepare_hybrid_graph_associations(self,
-                                           paragraph: stl_predictor_ds_handler.ProcessedParagraph,
                                            word_indices: list[np.ndarray],
                                            sentence_indices: np.ndarray) -> None:
         """Prepares the hybrid graph associations between nodes for a single paragraph."""
@@ -279,4 +304,5 @@ class STLPredictorDatasetProcessor:
                           np.repeat(sent_idx, len(sent_word_indices))])
             )
 
-        torch.save(_cat_edge_indices(local_global_edge_idx), paragraph.local_global_edge_idx_pth)
+        torch.save(_cat_edge_indices(local_global_edge_idx),
+                   self._graph_features_paths['local_global_edge_idx_pth'])
