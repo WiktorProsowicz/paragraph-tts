@@ -69,8 +69,12 @@ class STLPredictorLoss(torch.nn.Module):
             assert wsv_cl_pos_weight is not None
             assert wsv_cl_eps is not None
 
-        self._wsv_cl_pos_weight = torch.tensor(wsv_cl_pos_weight)
-        self._wsv_cl_eps = wsv_cl_eps
+            self._wsv_cl_pos_weight = torch.tensor(wsv_cl_pos_weight)
+            self._wsv_cl_eps = wsv_cl_eps
+
+        else:
+            self._wsv_cl_pos_weight = None
+            self._wsv_cl_eps = None
 
     def forward(self,
                 predictions: STLPredictorOutput,
@@ -120,31 +124,39 @@ class STLPredictorLoss(torch.nn.Module):
                          predictions: STLPredictorOutput,
                          batch_graph: HeteroData) -> dict[str, torch.Tensor]:
 
+        losses: dict[str, torch.Tensor] = {}
+
         chosen_wsv_logits = predictions['wsv_logits'][batch_graph.has_wsv_mask]
 
         if self._model_output_mode == 'weights':
-            return {
-                'wsv_pred_loss': torch.nn.functional.l1_loss(chosen_wsv_logits,
-                                                             batch_graph.wsv_weights)
-            }
 
-        pos_wsv_mask = batch_graph.wsv_weights > self._wsv_cl_eps
+            losses['wsv_pred_loss'] = torch.nn.functional.mse_loss(chosen_wsv_logits,
+                                                                   batch_graph.wsv_weights)
 
-        wsv_cl_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            predictions['wsv_cl_logits'][batch_graph.has_wsv_mask],
-            pos_wsv_mask.float(),
-            pos_weight=self._wsv_cl_pos_weight
-        )
+        elif self._model_output_mode == 'classification-plus-weights':
 
-        wsv_pred_loss = torch.nn.functional.mse_loss(
-            torch.relu(chosen_wsv_logits)[pos_wsv_mask],
-            batch_graph.wsv_weights[pos_wsv_mask]
-        )
+            pos_wsv_mask = batch_graph.wsv_weights > self._wsv_cl_eps
 
-        return {
-            'wsv_cl_loss': wsv_cl_loss,
-            'wsv_pred_loss': wsv_pred_loss
-        }
+            losses['wsv_pred_loss'] = torch.nn.functional.mse_loss(
+                torch.relu(chosen_wsv_logits)[pos_wsv_mask],
+                batch_graph.wsv_weights[pos_wsv_mask]
+            )
+
+            losses['wsv_cl_loss'] = torch.nn.functional.binary_cross_entropy_with_logits(
+                predictions['wsv_cl_logits'][batch_graph.has_wsv_mask],
+                pos_wsv_mask.float(),
+                pos_weight=self._wsv_cl_pos_weight
+            )
+
+        elif self._model_output_mode == 'logits':
+
+            losses['wsv_pred_loss'] = torch.nn.functional.kl_div(
+                torch.log_softmax(chosen_wsv_logits, dim=-1),
+                batch_graph.wsv_weights,
+                reduction='batchmean'
+            )
+
+        return losses
 
     def _calc_moe_losses(self, predictions: STLPredictorOutput) -> dict[str, torch.Tensor]:
 
