@@ -106,7 +106,8 @@ def main(config: omegaconf.DictConfig) -> None:
             log_every_n_steps=25,
             gradient_clip_val=config.run_cfg.grad_clip_val,
             enable_model_summary=True,
-            accumulate_grad_batches=config.run_cfg.accumulate_grad_batches
+            accumulate_grad_batches=config.run_cfg.accumulate_grad_batches,
+            precision='16-mixed'
         )
 
         _logger().info('Starting training...')

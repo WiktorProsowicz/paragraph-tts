@@ -152,7 +152,10 @@ class STLPredictorDataModule(pl.LightningDataModule):
         return torch_geometric.loader.DataLoader(self._train_ds,
                                                  batch_size=self._batch_size,
                                                  shuffle=True,
-                                                 num_workers=self._num_workers)
+                                                 num_workers=self._num_workers,
+                                                 pin_memory=True,
+                                                 persistent_workers=True,
+                                                 prefetch_factor=4)
 
     def val_dataloader(self) -> torch_geometric.loader.DataLoader:
         """Returns the validation dataloader."""
@@ -161,4 +164,7 @@ class STLPredictorDataModule(pl.LightningDataModule):
         return torch_geometric.loader.DataLoader(self._val_ds,
                                                  batch_size=self._batch_size,
                                                  shuffle=False,
-                                                 num_workers=self._num_workers)
+                                                 num_workers=self._num_workers,
+                                                 pin_memory=True,
+                                                 persistent_workers=True,
+                                                 prefetch_factor=4)
