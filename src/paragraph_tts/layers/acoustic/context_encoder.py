@@ -95,7 +95,6 @@ class ContextEncoder(torch.nn.Module):
         hidden_size: int
         phonemes_hidden_size: int
         n_blocks: int
-        cbhg_k_banks: int
         dropout_rate: float
         num_att_heads: int
         att_feature_map_dim: int
