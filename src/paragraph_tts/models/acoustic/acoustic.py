@@ -228,6 +228,33 @@ class AcousticModel(pl.LightningModule):
         return {**dec_outputs,
                 **prosody_enc_outputs}
 
+    def inference(self,
+                  inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Performs inference with the model.
+
+        If prosody encoder is used, the `inputs` dict is supposed to contain 'gst_weights' and
+        'wsv_weights' tensors, as well as 'gst_to_phone_indices' for upsampling prosody embeddings
+        to phoneme level.
+        """
+
+        enc_output = self._obtain_encoder_outputs(inputs)
+
+        if self._prosody_encoder is not None:
+
+            gst_emb = self._prosody_encoder.global_stl.get_emb_from_weights(inputs['gst_weights'])
+            wsv_emb = self._prosody_encoder.local_stl.get_emb_from_weights(inputs['input_word_emb'])
+
+            gst_emb = gst_emb[torch.arange(enc_output.size(0)),
+                              inputs['gst_to_phone_indices']]
+            wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
+                              inputs['word_to_phoneme_indices']]
+
+            enc_output = enc_output + gst_emb + wsv_emb
+
+        return self._obtain_decoder_outputs(inputs,
+                                            use_teacher_forcing=False,
+                                            enc_output=enc_output)
+
     def obtain_prosody_encoder_outputs(self,
                                        inputs: dict[str, torch.Tensor],
                                        wsv_bin_params: ctt_modules.StlBinarizationParams,

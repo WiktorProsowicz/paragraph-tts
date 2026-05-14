@@ -90,17 +90,20 @@ class Encoder(torch.nn.Module):
                 ling_stats: torch.Tensor,
                 bert_embeddings: torch.Tensor,
                 word_to_phoneme_indices: torch.Tensor,
-                sentence_pos_id: torch.Tensor,
+                sentence_pos: torch.Tensor,
                 spk_rate: torch.Tensor,
-                input_length: torch.Tensor) -> torch.Tensor:
+                input_length: torch.Tensor,
+                ) -> torch.Tensor:
         """Encodes input sequences.
 
         Args:
             phoneme_ids: Tensor of shape [B, L] with input phoneme IDs.
             pos_tag_ids: Tensor of shape [B, L] with input POS tag IDs.
             ling_stats: Tensor of shape [B, L, D] with input linguistic features.
-            sentence_pos_ids: Tensor of shape [B] with sentence position IDs. (e.g. "1- middle")
-            spk_rate: Tensor of shape [B] with speaker's speech rate.
+            bert_embeddings: Tensor of shape [B, W, D] with input BERT embeddings.
+            word_to_phoneme_indices: Tensor of shape [B, L] mapping phoneme to word positions.
+            sentence_pos: Tensor of shape [B]/[B, L] with sentence position IDs. (e.g. "1- middle")
+            spk_rate: Tensor of shape [B]/[B, L] with speaker's speech rate.
             input_length: Tensor of shape [B] with lengths of input sequences.
         """
 
@@ -108,12 +111,17 @@ class Encoder(torch.nn.Module):
 
         phoneme_emb = self._phoneme_emb(phoneme_ids)
         pos_tags_emb = self._pos_tags_emb(pos_tag_ids)
-        sent_pos_emb = self._sentence_pos_emb(sentence_pos_id)
+        sent_pos_emb = self._sentence_pos_emb(sentence_pos)
         bert_emb = self._bert_enc(bert_embeddings)
         bert_emb = bert_emb[torch.arange(bert_emb.size(0)).unsqueeze(1), word_to_phoneme_indices]
 
-        sent_pos_emb = sent_pos_emb.unsqueeze(1).expand(-1, phoneme_emb.size(1), -1)
-        spk_rate = spk_rate.unsqueeze(-1).unsqueeze(-1).expand(-1, phoneme_emb.size(1), 1)
+        if sent_pos_emb.dim() == 2:
+            sent_pos_emb = sent_pos_emb.unsqueeze(1).expand(-1, phoneme_emb.size(1), -1)
+
+        if spk_rate.dim() == 1:
+            spk_rate = spk_rate.unsqueeze(-1).unsqueeze(-1).expand(-1, phoneme_emb.size(1), 1)
+        else:
+            spk_rate = spk_rate.unsqueeze(-1)
 
         encoded_ling = self._ling_stats_fc(torch.cat([ling_stats, pos_tags_emb], dim=-1))
         prenet_input = torch.cat([phoneme_emb, encoded_ling, bert_emb,
