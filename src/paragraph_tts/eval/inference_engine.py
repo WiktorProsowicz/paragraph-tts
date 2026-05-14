@@ -8,6 +8,7 @@ import soundfile
 
 from torch_dev_utils.tts import inference as inference_utils
 from torch_dev_utils.tts import visualization as tdu_viz
+import tqdm
 
 from paragraph_tts.models.stl_predictor import stl_predictor
 from paragraph_tts.models.acoustic import acoustic
@@ -22,14 +23,18 @@ class InferenceEngine:
     def __init__(self,
                  acoustic_model: acoustic.AcousticModel,
                  stl_predictor_model: stl_predictor.STLPredictor | None,
+                 energy_quantization_params: tuple[int, float, float],
+                 pitch_quantization_params: tuple[int, float, float],
                  inference_label: str,
                  inference_device: str) -> None:
 
         self._acoustic_model = acoustic_model.to(inference_device)
+        self._acoustic_model.eval()
 
         self._stl_predictor_model = stl_predictor_model
         if self._stl_predictor_model is not None:
             self._stl_predictor_model = stl_predictor_model.to(inference_device)
+            self._stl_predictor_model.eval()
 
         self._inference_label = inference_label
         self._inference_device = inference_device
@@ -44,6 +49,12 @@ class InferenceEngine:
 
         self._vocoder = vocoder
 
+        n_pitch_bins, min_pitch, max_pitch = pitch_quantization_params
+        self._f0_possible_values = torch.linspace(min_pitch, max_pitch, n_pitch_bins)
+
+        n_energy_bins, min_energy, max_energy = energy_quantization_params
+        self._energy_possible_values = torch.linspace(min_energy, max_energy, n_energy_bins)
+
     def run_inference(self,
                       eval_ds_path: pathlib.Path,
                       root_output_dir: pathlib.Path) -> None:
@@ -51,7 +62,9 @@ class InferenceEngine:
 
         ds_handler = eval_ds_handler.EvalDsHandler(eval_ds_path)
 
-        for input_data in ds_loader.WholeParagraphsDS(list(ds_handler.iter_whole_paragraphs())):
+        for input_data in tqdm.tqdm(ds_loader.WholeParagraphsDS(ds_handler),
+                                    desc='Running inference on whole paragraphs',
+                                    unit='paragraph'):
 
             model_inputs = self._obtain_acoustic_model_inputs(input_data,
                                                               is_whole_paragraph=True)
@@ -62,6 +75,31 @@ class InferenceEngine:
                 .joinpath(str(input_data.raw_paragraph.spk_id))
                 .joinpath(f'{input_data.raw_paragraph.chap_id}_{input_data.raw_paragraph.para_id}')
             )
+            para_output_dir.mkdir(parents=True, exist_ok=True)
+
+            with para_output_dir.joinpath('raw_paragraph.json').open('w') as f:
+                f.write(input_data.raw_paragraph.model_dump_json(indent=4))
+
+            with para_output_dir.joinpath('gt_wav.wav').open('wb') as f:
+                soundfile.write(f, input_data.gt_wav, 22050)
+
+            self._run_inference_and_save_results(model_inputs,
+                                                 para_output_dir / self._inference_label)
+
+        for input_data in tqdm.tqdm(ds_loader.PartialParagraphsDS(ds_handler),
+                                    desc='Running inference on partial paragraphs',
+                                    unit='paragraph'):
+
+            model_inputs = self._obtain_acoustic_model_inputs(input_data,
+                                                              is_whole_paragraph=False)
+
+            para_output_dir = (
+                root_output_dir
+                .joinpath('partial_paragraphs')
+                .joinpath(str(input_data.raw_paragraph.spk_id))
+                .joinpath(f'{input_data.raw_paragraph.chap_id}_{input_data.raw_paragraph.para_id}')
+            )
+            para_output_dir.mkdir(parents=True, exist_ok=True)
 
             with para_output_dir.joinpath('raw_paragraph.json').open('w') as f:
                 f.write(input_data.raw_paragraph.model_dump_json(indent=4))
@@ -98,16 +136,27 @@ class InferenceEngine:
         inputs.update(input_data.context_tensors)
         inputs.update(input_data.input_acoustic_data)
 
-        return {name: tensor.unsqueeze(0).to(self._inference_device)
-                for name, tensor in inputs.items()}
+        inputs['input_phonemes_length'] = torch.tensor(inputs['input_phoneme_ids'].shape[0])
+        inputs['context_tokens_length'] = torch.tensor(inputs['context_token_emb'].shape[0])
+        inputs['context_pse_length'] = torch.tensor(inputs['context_pse'].shape[0])
+        inputs['spk_emb'] = input_data.spk_embedding
+
+        inputs = {name: tensor.unsqueeze(0) for name, tensor in inputs.items()}
+
+        inputs['pitch_possible_values'] = self._f0_possible_values
+        inputs['energy_possible_values'] = self._energy_possible_values
+
+        return {name: tensor.to(self._inference_device) for name, tensor in inputs.items()}
 
     def _run_inference_and_save_results(self,
                                         model_inputs: dict[str, torch.Tensor],
                                         output_dir: pathlib.Path) -> None:
         """Runs inference for a single sample and saves the results."""
 
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         with torch.no_grad():
-            model_outputs = self._acoustic_model(**model_inputs)
+            model_outputs = self._acoustic_model.inference(model_inputs)
 
             wav = inference_utils.transform_mel_to_wav(
                 model_outputs['pred_mel_spec'].squeeze(0).cpu(),
