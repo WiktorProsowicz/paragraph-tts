@@ -39,6 +39,12 @@ class EvalDsHandler:
         self._partial_paragraphs_path = eval_ds_path / 'partial_paragraphs'
         self._whole_paragraphs_path = eval_ds_path / 'whole_paragraphs'
 
+    def spk_embedding_path(self, spk_id: int) -> pathlib.Path:
+        """Returns the path to the speaker embedding for the given speaker ID."""
+
+        self._speakers_path.joinpath(str(spk_id)).mkdir(parents=True, exist_ok=True)
+        return self._speakers_path.joinpath(str(spk_id)).joinpath('embedding.pt')
+
     def iter_partial_paragraphs(self) -> Iterator[EvalParagraph]:
         """Iterates over all partial paragraphs in the evaluation dataset."""
 

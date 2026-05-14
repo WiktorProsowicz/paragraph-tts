@@ -20,6 +20,7 @@ class EvalInputData:
     input_acoustic_data: dict[str, torch.Tensor]
     raw_paragraph: raw_libri_dir_handler.ParagraphInfo
     gt_wav: np.ndarray
+    spk_embedding: torch.Tensor
 
 
 def construct_graph_for_paragraph(paragraph: eval_ds_handler.EvalParagraph) -> HeteroData:
@@ -28,7 +29,7 @@ def construct_graph_for_paragraph(paragraph: eval_ds_handler.EvalParagraph) -> H
     graph = HeteroData()
     features_paths = paragraph.graph_features_paths
 
-    word_embeddings_list = torch.load(features_paths['word_embeddings_pth'])
+    word_embeddings_list = torch.load(features_paths['word_embeddings_path'])
 
     graph['word_emb'].x = torch.cat(word_embeddings_list, dim=0)
     graph['global_emb'].x = torch.stack([torch.mean(word_embeddings, dim=0)
@@ -63,9 +64,11 @@ def construct_graph_for_paragraph(paragraph: eval_ds_handler.EvalParagraph) -> H
 class WholeParagraphsDS(torch.utils.data.Dataset):
     """Dataset for loading model data for whole paragraphs."""
 
-    def __init__(self, paragraphs: list[eval_ds_handler.EvalParagraph]) -> None:
+    def __init__(self, ds_handler: eval_ds_handler.EvalDsHandler) -> None:
 
-        self._paragraphs = paragraphs
+        self._paragraphs = list(ds_handler.iter_whole_paragraphs())
+
+        self._ds_handler = ds_handler
 
     def __len__(self) -> int:
         return len(self._paragraphs)
@@ -73,6 +76,7 @@ class WholeParagraphsDS(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> EvalInputData:
 
         paragraph = self._paragraphs[idx]
+        spk_emb_path = self._ds_handler.spk_embedding_path(paragraph.raw_paragraph.spk_id)
 
         return EvalInputData(
             context_tensors={name: torch.load(path)
@@ -81,16 +85,21 @@ class WholeParagraphsDS(torch.utils.data.Dataset):
             input_acoustic_data={name: torch.load(path)
                                  for name, path in paragraph.utterances[0].tensors_paths.items()},
             raw_paragraph=paragraph.raw_paragraph,
-            gt_wav=audio_prep.load_wav_raw(paragraph.utterances[0].gt_wav_path)
+            gt_wav=audio_prep.load_wav_raw(paragraph.utterances[0].gt_wav_path),
+            spk_embedding=torch.load(spk_emb_path)
         )
 
 
 class PartialParagraphsDS(torch.utils.data.Dataset):
     """Dataset for loading model data for partial paragraphs."""
 
-    def __init__(self, utterances: list[eval_ds_handler.EvalUtterance]) -> None:
+    def __init__(self, ds_handler: eval_ds_handler.EvalDsHandler) -> None:
 
-        self._utterances = utterances
+        self._utterances = [utt
+                            for para in ds_handler.iter_partial_paragraphs()
+                            for utt in para.utterances]
+
+        self._ds_handler = ds_handler
 
     def __len__(self) -> int:
         return len(self._utterances)
@@ -112,11 +121,14 @@ class PartialParagraphsDS(torch.utils.data.Dataset):
             torch.tensor(acoustic_data['input_phoneme_ids'].size(0))
         )
 
+        spk_emb_path = self._ds_handler.spk_embedding_path(paragraph.raw_paragraph.spk_id)
+
         return EvalInputData(
             context_tensors={name: torch.load(path)
                              for name, path in paragraph.context_features_paths.items()},
             graph_data=construct_graph_for_paragraph(paragraph),
             input_acoustic_data=acoustic_data,
             raw_paragraph=paragraph.raw_paragraph,
-            gt_wav=audio_prep.load_wav_raw(utterance.gt_wav_path)
+            gt_wav=audio_prep.load_wav_raw(utterance.gt_wav_path),
+            spk_embedding=torch.load(spk_emb_path)
         )

@@ -7,6 +7,7 @@ import os
 import hydra
 import omegaconf
 
+from comp_trans_tts import deepspeaker
 from paragraph_tts.utils import logging_utils
 from paragraph_tts.eval import test_ds_processor
 from paragraph_tts.utils.path import raw_libri_dir_handler
@@ -28,15 +29,18 @@ def main(cfg: omegaconf.DictConfig) -> None:
     alignments_handler = alignments_dir_handler.AlignmentsDirHandler(cfg.alignments_dir)
     raw_ds_handler = raw_libri_dir_handler.RawLibriDirHandler(cfg.raw_ds_path,
                                                               choose_splits=cfg.choose_splits)
+    spk_embedder = deepspeaker.embedder.DeepSpeakerEmbedder(cfg.processor_cfg.embedder_device)
 
     processor = test_ds_processor.TestDsProcessor(
         test_ds_processor.TestDsProcessor.Configuration(
             bert_model_tag=cfg.processor_cfg.bert_model_tag,
             embedder_device=cfg.processor_cfg.embedder_device,
-            spec_frames_per_second=cfg.processor_cfg.spec_frames_per_second
+            spec_frames_per_second=cfg.processor_cfg.spec_frames_per_second,
+            paragraph_word_count_bounds=tuple(cfg.processor_cfg.paragraph_word_count_bounds)
         ),
         raw_ds_handler=raw_ds_handler,
-        alignments_handler=alignments_handler
+        alignments_handler=alignments_handler,
+        spk_embedder=spk_embedder
     )
 
     processor.prepare_dataset(pathlib.Path(cfg.output_dir),

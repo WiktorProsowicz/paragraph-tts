@@ -1,17 +1,19 @@
-raw_ds_path: data/librittsr-test/LibriTTS_R/
-choose_splits: [test-clean]
+raw_ds_path: tmp/LibriTTS_R/
+choose_splits: [train-clean-100]
 alignments_dir: data/librittsr_alignments/
 output_dir: tmp/eval_ds/
 processor_cfg:
   bert_model_tag: microsoft/deberta-v3-large
   embedder_device: cuda
   spec_frames_per_second: 86
+  paragraph_word_count_bounds: [5, 100]
 max_partial_paras_with_n_sents:
-  3: 5
-  4: 5
+  2: 10
+  3: 10
+  4: 10
 max_whole_paras_with_n_sents:
-  1: 5
-  2: 5
-  3: 5
-  4: 5
-  5: 5
+  1: 10
+  2: 10
+  3: 10
+  4: 10
+  5: 10

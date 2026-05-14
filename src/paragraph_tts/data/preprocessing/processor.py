@@ -121,7 +121,12 @@ class LibriTTSRProcessor:
             utterances = list(processed_ds_handler.iter_utterances(speaker_info.spk_id))
 
             if self._cfg.multi_speaker:
-                self._prepare_spk_embedding(speaker_info, utterances)
+                prepare_and_save_spk_embedding(
+                    spk_id=speaker_info.spk_id,
+                    utterances=[utt.raw_utterance for utt in utterances],
+                    spk_embedder=self._spk_embedder,
+                    output_path=speaker_info.embedding_path
+                )
 
             self._save_normalization_stats(speaker_info, utterances)
 
@@ -368,23 +373,25 @@ class LibriTTSRProcessor:
             'std': torch.tensor(np.sqrt(energy_scaler.var_), dtype=torch.float)
         }, speaker_info.energy_stats_path)
 
-    def _prepare_spk_embedding(self,
-                               speaker_info: processed_libri_dir_handler.SpeakerInfo,
-                               utterances: list[processed_libri_dir_handler.ProcessedUtterance]
-                               ) -> None:
 
-        if speaker_info.embedding_path.exists():
-            _logger().debug('Speaker embedding for spk %d already exist, skipping preparation.',
-                            speaker_info.spk_id)
-            return
+def prepare_and_save_spk_embedding(spk_id: int,
+                                   utterances: list[raw_libri_dir_handler.UtteranceInfo],
+                                   spk_embedder: deepspeaker.embedder.DeepSpeakerEmbedder,
+                                   output_path: pathlib.Path) -> None:
+    """Prepares and saves speaker embedding for the given utterances."""
 
-        spk_embeddings: list[np.ndarray] = []
+    if output_path.exists():
+        _logger().debug('Speaker embedding for spk %d already exist at %s, skipping preparation.',
+                        spk_id, output_path)
+        return
 
-        for utterance_info in utterances:
-            embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
-                utterance_info.raw_utterance.wav_path)
-            spk_embeddings.append(self._spk_embedder(embedder_input)[0])
+    spk_embeddings: list[np.ndarray] = []
 
-        final_embedding = np.mean(spk_embeddings, axis=0)
+    for utterance_info in utterances:
+        embedder_input = deepspeaker.preprocess.load_wav_for_deepseaker(
+            utterance_info.wav_path)
+        spk_embeddings.append(spk_embedder(embedder_input)[0])
 
-        torch.save(torch.tensor(final_embedding), speaker_info.embedding_path)
+    final_embedding = np.mean(spk_embeddings, axis=0)
+
+    torch.save(torch.tensor(final_embedding), output_path)

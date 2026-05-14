@@ -12,6 +12,7 @@ import torch
 import soundfile
 import numpy as np
 
+from comp_trans_tts import deepspeaker
 from torch_dev_utils.tts import text_prep
 from torch_dev_utils.text_preprocessing import embeddings
 from torch_dev_utils.tts import alignment_prep
@@ -22,6 +23,7 @@ from paragraph_tts.utils.path import alignments_dir_handler
 from paragraph_tts.utils.path import processed_libri_dir_handler
 from paragraph_tts.utils.path import eval_ds_handler
 from paragraph_tts.data.preprocessing import stl_predictor_ds_processor
+from paragraph_tts.data.preprocessing import processor as librittsr_processor
 
 
 @dataclasses.dataclass
@@ -55,11 +57,14 @@ class TestDsProcessor:
         spec_frames_per_second: Annotated[int, Field(
             description='Num. of spectrogram frames per second to calculate spk rate.')]
 
+        paragraph_word_count_bounds: Annotated[tuple[int, int], Field(
+            description='Bounds for paragraph word count.')]
+
     def __init__(self,
                  config: Configuration,
                  raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler,
-                 alignments_handler: alignments_dir_handler.AlignmentsDirHandler
-                 ) -> None:
+                 alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
+                 spk_embedder: deepspeaker.embedder.DeepSpeakerEmbedder) -> None:
         """Initializes the processor."""
 
         self._raw_ds_handler = raw_ds_handler
@@ -69,6 +74,7 @@ class TestDsProcessor:
         self._bert_embedder = embeddings.BERTEmbedder(config.bert_model_tag,
                                                       device=config.embedder_device,
                                                       batch_size=16)
+        self._spk_embedder = spk_embedder
 
         self._cfg = config
 
@@ -98,11 +104,11 @@ class TestDsProcessor:
             else:
                 partial_paragraphs.append(paragraph)
 
-        partial_paragraphs = self._filter_paragraphs_by_num_sentences(
-            partial_paragraphs, max_partial_paras_with_n_sents)
+        partial_paragraphs = self._filter_paragraphs(partial_paragraphs,
+                                                     max_partial_paras_with_n_sents)
 
-        whole_paragraphs = self._filter_paragraphs_by_num_sentences(
-            whole_paragraphs, max_whole_paras_with_n_sents)
+        whole_paragraphs = self._filter_paragraphs(whole_paragraphs,
+                                                   max_whole_paras_with_n_sents)
 
         for paragraph in tqdm.tqdm(partial_paragraphs,
                                    desc='Preparing partial paragraphs'):
@@ -112,10 +118,27 @@ class TestDsProcessor:
                                    desc='Preparing whole paragraphs'):
             self._prepare_whole_paragraph(paragraph, eval_dataset_handler)
 
-    def _filter_paragraphs_by_num_sentences(self,
-                                            paragraphs: list[raw_libri_dir_handler.ParagraphInfo],
-                                            max_paras_per_sentence_count: dict[int, int]
-                                            ) -> list[raw_libri_dir_handler.ParagraphInfo]:
+        all_speakers = list(self._raw_ds_handler.iter_speakers())
+        chosen_speakers = [spk_id for spk_id in all_speakers
+                           if any(para.spk_id == spk_id
+                                  for para in partial_paragraphs + whole_paragraphs)]
+
+        for spk_id in tqdm.tqdm(chosen_speakers,
+                                desc='Preparing speaker embeddings'):
+            librittsr_processor.prepare_and_save_spk_embedding(
+                spk_id=spk_id,
+                utterances=[utt
+                            for utt in self._raw_ds_handler.iter_utterances_for_spk(spk_id)
+                            if utt.wav_path is not None],
+                spk_embedder=self._spk_embedder,
+                output_path=eval_dataset_handler.spk_embedding_path(spk_id)
+
+            )
+
+    def _filter_paragraphs(self,
+                           paragraphs: list[raw_libri_dir_handler.ParagraphInfo],
+                           max_paras_per_sentence_count: dict[int, int]
+                           ) -> list[raw_libri_dir_handler.ParagraphInfo]:
         """Filters paragraphs by the number of sentences they contain."""
 
         sentence_count_to_paragraphs: dict[int, list[raw_libri_dir_handler.ParagraphInfo]] = {
@@ -123,6 +146,12 @@ class TestDsProcessor:
         }
 
         for paragraph in paragraphs:
+
+            word_count = sum(len(utt.normalized_text.split()) for utt in paragraph.utterances)
+            min_words, max_words = self._cfg.paragraph_word_count_bounds
+
+            if not min_words <= word_count <= max_words:
+                continue
 
             sentence_count = len(paragraph.utterances)
 
@@ -237,11 +266,11 @@ class TestDsProcessor:
 
         context_tokens = torch.cat(
             self._bert_embedder.obtain_bert_embeddings_for_sentences(context_sentences)
-        )
+        ).to(torch.float32)
 
         if len(context_sentences) > 1:
             context_pse_list = self._bert_embedder.obtain_paired_bert_embeddings(context_sentences)
-            context_pse = torch.stack(context_pse_list, dim=0)
+            context_pse = torch.stack(context_pse_list, dim=0).to(torch.float32)
         else:
             context_pse = torch.zeros((1, context_tokens.shape[-1]), dtype=torch.float32)
 
@@ -251,17 +280,18 @@ class TestDsProcessor:
             text_features = self._prepare_text_features(utterance, add_inter_utterance_silence)
 
             token_emb = self._bert_embedder.obtain_bert_embeddings(
-                text_features.get_bert_token_sequence()).float()
+                text_features.get_bert_token_sequence()).clone().float()
             bert_word_pool_matrix = alignment_prep.spans_to_pool_matrix(
                 text_features.get_word_to_token_spans())
             word_emb = torch.matmul(torch.tensor(bert_word_pool_matrix).T, token_emb)
             phoneme_ids = self._text_preprocessor.obtain_phoneme_ids(
                 text_features.get_phoneme_sequence())
             input_ling_stats = text_prep.obtain_ling_stats(text_features)
-            pos_tags = self._text_preprocessor.obtain_pos_tags(text_features)
             word_phone_indices = alignment_prep.spans_to_indices_of_smaller_seq(
                 text_features.get_word_to_phoneme_spans()
             )
+            pos_tags = torch.tensor(self._text_preprocessor.obtain_pos_tags(text_features))
+            pos_tags = pos_tags[word_phone_indices]
             sentence_pos = processed_libri_dir_handler.SentencePosType.from_utt_id(
                 utterance.utt_id,
                 len(paragraph.utterances)
@@ -280,8 +310,9 @@ class TestDsProcessor:
                         'input_word_emb': word_emb,
                         'input_phoneme_ids': torch.tensor(phoneme_ids, dtype=torch.long),
                         'input_ling_stats': input_ling_stats,
-                        'input_pos_tags': torch.tensor(pos_tags, dtype=torch.long),
-                        'word_to_phoneme_indices': torch.tensor(word_phone_indices, dtype=torch.long),
+                        'input_pos_tags': pos_tags,
+                        'word_to_phoneme_indices': torch.tensor(word_phone_indices,
+                                                                dtype=torch.long),
                         'sentence_pos': torch.tensor(sentence_pos.value, dtype=torch.long),
                         'spk_rate': torch.tensor(spk_rate, dtype=torch.float32)
                     }
@@ -311,7 +342,7 @@ class TestDsProcessor:
             pauses = alignment_prep.get_pauses(word_phone_int_mapping)
 
             if add_inter_utterance_silence:
-                pauses.append((len(text_features.words) - 1, '<medium_pause>'))
+                pauses.append((len(text_features.words) - 1, '<short_pause>'))
 
             text_prep.add_pauses(text_features, pauses)
 
