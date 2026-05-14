@@ -6,7 +6,6 @@ import torch
 import pydantic
 from pydantic import Field
 
-from paragraph_tts.layers.shared import cbhg
 from paragraph_tts.layers.shared import permute_former_att
 from paragraph_tts.utils import neural as neural_utils
 
@@ -19,7 +18,6 @@ class _ContextProcessingBlock(torch.nn.Module):
                  hidden_size: int,
                  phonemes_hidden_size: int,
                  n_blocks: int,
-                 cbhg_k_banks: int,
                  dropout_rate: float,
                  num_att_heads: int,
                  att_feature_map_dim: int):
@@ -29,44 +27,18 @@ class _ContextProcessingBlock(torch.nn.Module):
         self._prenet = torch.nn.Sequential(
             torch.nn.Linear(input_emb_dim, hidden_size),
             torch.nn.ReLU(),
-            torch.nn.Dropout(p=dropout_rate),
-            torch.nn.Linear(hidden_size, hidden_size),
-            torch.nn.ReLU(),
             torch.nn.Dropout(p=dropout_rate)
         )
 
-        self._blocks = torch.nn.ModuleList(
-            [
-                cbhg.CBHG(  # type: ignore
-                    in_dim=hidden_size,
-                    K=cbhg_k_banks,
-                    hidden_sizes=[hidden_size, hidden_size]
-                )
-            ]
-        )
+        self._blocks = torch.nn.ModuleList([
+            permute_former_att.PermuteFormerMHA(
+                d_model=hidden_size,
+                num_heads=num_att_heads,
+                feature_map_dim=att_feature_map_dim
+            ) for _ in range(n_blocks)
+        ])
 
-        self._cbhg_postnets = torch.nn.ModuleList(
-            [
-                torch.nn.Sequential(
-                    torch.nn.Linear(hidden_size * 2, hidden_size),
-                    torch.nn.ReLU(),
-                    torch.nn.Dropout(p=dropout_rate)
-                )
-                for _ in range(n_blocks)
-            ]
-        )
-
-        self._postnet = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size, phonemes_hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(p=dropout_rate)
-        )
-
-        self._global_states_enc = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 2, phonemes_hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(p=dropout_rate)
-        )
+        self._postnet = torch.nn.Linear(hidden_size, phonemes_hidden_size)
 
         self._att = permute_former_att.PermuteFormerMHA(
             d_model=phonemes_hidden_size,
@@ -88,24 +60,19 @@ class _ContextProcessingBlock(torch.nn.Module):
             phoneme_lengths: Tensor of shape [B] containing lengths of the phoneme sequences.
         """
 
-        batch_size = inputs.size(0)
-
         input_mask = neural_utils.binary_mask_from_lengths(input_lengths)
         phoneme_mask = neural_utils.binary_mask_from_lengths(phoneme_lengths)
 
         outputs = self._prenet(inputs)
 
-        for block, postnet in zip(self._blocks, self._cbhg_postnets):
-            outputs = block(outputs, input_lengths)
-            outputs = postnet(outputs)
+        for block in self._blocks:
+            outputs = block(queries=outputs,
+                            keys=outputs,
+                            values=outputs,
+                            key_mask=input_mask,
+                            query_mask=input_mask) + outputs
 
-        global_states_last = outputs[torch.arange(batch_size), input_lengths - 1]
-        global_states_first = outputs[:, 0]
-
-        global_states = torch.cat([global_states_first, global_states_last], dim=-1)
-        global_states = self._global_states_enc(global_states)
-
-        outputs = self._postnet(outputs) + global_states.unsqueeze(1)
+        outputs = self._postnet(outputs)
 
         chosen_context = self._att(
             queries=phoneme_representations,
@@ -142,7 +109,6 @@ class ContextEncoder(torch.nn.Module):
             hidden_size=cfg.hidden_size,
             phonemes_hidden_size=cfg.phonemes_hidden_size,
             n_blocks=cfg.n_blocks,
-            cbhg_k_banks=cfg.cbhg_k_banks,
             dropout_rate=cfg.dropout_rate,
             num_att_heads=cfg.num_att_heads,
             att_feature_map_dim=cfg.att_feature_map_dim
@@ -153,7 +119,6 @@ class ContextEncoder(torch.nn.Module):
             hidden_size=cfg.hidden_size,
             phonemes_hidden_size=cfg.phonemes_hidden_size,
             n_blocks=cfg.n_blocks,
-            cbhg_k_banks=cfg.cbhg_k_banks,
             dropout_rate=cfg.dropout_rate,
             num_att_heads=cfg.num_att_heads,
             att_feature_map_dim=cfg.att_feature_map_dim
