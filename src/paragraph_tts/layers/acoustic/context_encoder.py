@@ -8,6 +8,7 @@ from pydantic import Field
 
 from paragraph_tts.layers.shared import permute_former_att
 from paragraph_tts.utils import neural as neural_utils
+from paragraph_tts.layers.shared import moe
 
 
 class _ContextProcessingBlock(torch.nn.Module):
@@ -25,20 +26,9 @@ class _ContextProcessingBlock(torch.nn.Module):
         super().__init__()
 
         self._prenet = torch.nn.Sequential(
-            torch.nn.Linear(input_emb_dim, hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(p=dropout_rate)
+            torch.nn.Linear(input_emb_dim, phonemes_hidden_size),
+            torch.nn.RMSNorm(phonemes_hidden_size),
         )
-
-        self._blocks = torch.nn.ModuleList([
-            permute_former_att.PermuteFormerMHA(
-                d_model=hidden_size,
-                num_heads=num_att_heads,
-                feature_map_dim=att_feature_map_dim
-            ) for _ in range(n_blocks)
-        ])
-
-        self._postnet = torch.nn.Linear(hidden_size, phonemes_hidden_size)
 
         self._att = permute_former_att.PermuteFormerMHA(
             d_model=phonemes_hidden_size,
@@ -64,15 +54,6 @@ class _ContextProcessingBlock(torch.nn.Module):
         phoneme_mask = neural_utils.binary_mask_from_lengths(phoneme_lengths)
 
         outputs = self._prenet(inputs)
-
-        for block in self._blocks:
-            outputs = block(queries=outputs,
-                            keys=outputs,
-                            values=outputs,
-                            key_mask=input_mask,
-                            query_mask=input_mask) + outputs
-
-        outputs = self._postnet(outputs)
 
         chosen_context = self._att(
             queries=phoneme_representations,
