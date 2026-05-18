@@ -6,14 +6,10 @@ processor_cfg:
   bert_model_tag: microsoft/deberta-v3-large
   embedder_device: cuda
   spec_frames_per_second: 86
-  paragraph_word_count_bounds: [5, 100]
-max_partial_paras_with_n_sents:
-  2: 10
-  3: 10
-  4: 10
-max_whole_paras_with_n_sents:
-  1: 10
-  2: 10
-  3: 10
-  4: 10
-  5: 10
+paragraphs_spec:
+  - chap_id: 123720
+    para_id: 26
+    spk_id: 481
+  - chap_id: 123720
+    para_id: 33
+    spk_id: 481

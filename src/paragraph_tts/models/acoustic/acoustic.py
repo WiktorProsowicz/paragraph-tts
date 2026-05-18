@@ -244,7 +244,7 @@ class AcousticModel(pl.LightningModule):
             gst_emb = self._prosody_encoder.global_stl.get_emb_from_weights(inputs['gst_weights'])
             wsv_emb = self._prosody_encoder.local_stl.get_emb_from_weights(inputs['input_word_emb'])
 
-            gst_emb = gst_emb[torch.arange(enc_output.size(0)),
+            gst_emb = gst_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
                               inputs['gst_to_phone_indices']]
             wsv_emb = wsv_emb[torch.arange(enc_output.size(0)).unsqueeze(1),
                               inputs['word_to_phoneme_indices']]

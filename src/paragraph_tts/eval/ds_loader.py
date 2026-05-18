@@ -19,6 +19,7 @@ class EvalInputData:
     graph_data: HeteroData
     input_acoustic_data: dict[str, torch.Tensor]
     raw_paragraph: raw_libri_dir_handler.ParagraphInfo
+    utt_id: int | None
     gt_wav: np.ndarray
     spk_embedding: torch.Tensor
 
@@ -85,6 +86,7 @@ class WholeParagraphsDS(torch.utils.data.Dataset):
             input_acoustic_data={name: torch.load(path)
                                  for name, path in paragraph.utterances[0].tensors_paths.items()},
             raw_paragraph=paragraph.raw_paragraph,
+            utt_id=None,
             gt_wav=audio_prep.load_wav_raw(paragraph.utterances[0].gt_wav_path),
             spk_embedding=torch.load(spk_emb_path)
         )
@@ -129,6 +131,7 @@ class PartialParagraphsDS(torch.utils.data.Dataset):
             graph_data=construct_graph_for_paragraph(paragraph),
             input_acoustic_data=acoustic_data,
             raw_paragraph=paragraph.raw_paragraph,
+            utt_id=utterance.raw_utterance.utt_id,
             gt_wav=audio_prep.load_wav_raw(utterance.gt_wav_path),
             spk_embedding=torch.load(spk_emb_path)
         )

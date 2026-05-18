@@ -40,27 +40,7 @@ def main(cfg: omegaconf.DictConfig) -> None:
         ckpt_path,
         weights_only=False,
         visualize_n_batches=0,
-        visualize_n_samples_per_batch=0,
-        train_cfg=acoustic_module.TrainConfiguration(
-            loss_weights={},
-            loss_weight_decays={},
-            wsv_bin_init_temperature=0.0,
-            gst_bin_init_temperature=0.0,
-            wsv_bin_temperature_decay=0.0,
-            gst_bin_temperature_decay=0.0,
-            wsv_bin_loss_start_epoch=0,
-            wsv_bin_hard_start_epoch=0,
-            gst_bin_loss_start_epoch=0
-        ),
-        optim_cfg=acoustic_module.OptimizerConfiguration(
-            base_lr=0.0,
-            prosody_enc_lr=0.0,
-            betas=(0.0, 0.0),
-            eps=0.0,
-            base_weight_decay=0.0,
-            prosody_enc_weight_decay=0.0,
-            lr_scheduler_gamma=0.0
-        )
+        visualize_n_samples_per_batch=0
     )
 
     if cfg.stl_predictor_cfg is not None:
@@ -74,9 +54,9 @@ def main(cfg: omegaconf.DictConfig) -> None:
 
         stl_predictor_model = stl_predictor_module.STLPredictor.load_from_checkpoint(
             ckpt_path,
-            visualize_n_batches=0,
             weights_only=False,
-            visualize_n_samples_per_batch=0
+            viz_n_batches=0,
+            viz_n_samples_per_batch=0
         )
     else:
         stl_predictor_model = None

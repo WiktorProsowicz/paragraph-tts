@@ -35,17 +35,16 @@ def main(cfg: omegaconf.DictConfig) -> None:
         test_ds_processor.TestDsProcessor.Configuration(
             bert_model_tag=cfg.processor_cfg.bert_model_tag,
             embedder_device=cfg.processor_cfg.embedder_device,
-            spec_frames_per_second=cfg.processor_cfg.spec_frames_per_second,
-            paragraph_word_count_bounds=tuple(cfg.processor_cfg.paragraph_word_count_bounds)
+            spec_frames_per_second=cfg.processor_cfg.spec_frames_per_second
         ),
         raw_ds_handler=raw_ds_handler,
         alignments_handler=alignments_handler,
-        spk_embedder=spk_embedder
+        spk_embedder=spk_embedder,
+        paragraphs_spec=[test_ds_processor.ParagraphSpec(**para_spec)
+                         for para_spec in cfg.paragraphs_spec]
     )
 
-    processor.prepare_dataset(pathlib.Path(cfg.output_dir),
-                              max_partial_paras_with_n_sents=cfg.max_partial_paras_with_n_sents,
-                              max_whole_paras_with_n_sents=cfg.max_whole_paras_with_n_sents)
+    processor.prepare_dataset(pathlib.Path(cfg.output_dir))
 
 
 if __name__ == '__main__':

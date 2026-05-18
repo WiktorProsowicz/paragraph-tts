@@ -13,7 +13,6 @@ import tqdm
 from paragraph_tts.models.stl_predictor import stl_predictor
 from paragraph_tts.models.acoustic import acoustic
 from paragraph_tts.utils.path import eval_ds_handler
-from paragraph_tts.eval import test_ds_processor
 from paragraph_tts.eval import ds_loader
 
 
@@ -104,11 +103,14 @@ class InferenceEngine:
             with para_output_dir.joinpath('raw_paragraph.json').open('w') as f:
                 f.write(input_data.raw_paragraph.model_dump_json(indent=4))
 
-            with para_output_dir.joinpath('gt_wav.wav').open('wb') as f:
+            utt_output_dir = para_output_dir.joinpath(f'utt_{input_data.utt_id}')
+            utt_output_dir.mkdir(parents=True, exist_ok=True)
+
+            with utt_output_dir.joinpath('gt_wav.wav').open('wb') as f:
                 soundfile.write(f, input_data.gt_wav, 22050)
 
             self._run_inference_and_save_results(model_inputs,
-                                                 para_output_dir / self._inference_label)
+                                                 utt_output_dir / self._inference_label)
 
     def _obtain_acoustic_model_inputs(self,
                                       input_data: ds_loader.EvalInputData,
@@ -124,14 +126,19 @@ class InferenceEngine:
                     input_data.graph_data.to(self._inference_device)
                 )
 
-            inputs['gst_weights'] = stl_predictor_outputs['final_gst_weights']
-            inputs['wsv_weights'] = stl_predictor_outputs['final_wsv_weights']
+            gst_weights = stl_predictor_outputs['final_gst_weights']
+            wsv_weights = stl_predictor_outputs['final_wsv_weights']
 
-            if is_whole_paragraph:
-                inputs['gst_to_phone_indices'] = input_data.graph_data.sentence_lengths
-            else:
-                inputs['gst_to_phone_indices'] = torch.tensor(
-                    input_data.input_acoustic_data['input_phoneme_ids'].shape[0])
+            if not is_whole_paragraph:
+                gst_weights = gst_weights[input_data.utt_id]
+
+                wsv_weights = wsv_weights[
+                    input_data.graph_data.sentence_lengths[:input_data.utt_id].sum():
+                    input_data.graph_data.sentence_lengths[:input_data.utt_id + 1].sum()
+                ]
+
+            inputs['gst_weights'] = gst_weights
+            inputs['wsv_weights'] = wsv_weights
 
         inputs.update(input_data.context_tensors)
         inputs.update(input_data.input_acoustic_data)
@@ -161,7 +168,7 @@ class InferenceEngine:
             wav = inference_utils.transform_mel_to_wav(
                 model_outputs['pred_mel_spec'].squeeze(0).cpu(),
                 self._vocoder.decode_batch,
-                split_spec_by_silences=True
+                split_spec_by_silences=False
             )
 
         soundfile.write(output_dir.joinpath('predicted_sound.wav'), wav.squeeze(0).numpy(), 22050)

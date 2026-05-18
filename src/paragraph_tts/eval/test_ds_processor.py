@@ -42,6 +42,14 @@ class ParagraphData:
     context_features: dict[int, torch.Tensor]
 
 
+class ParagraphSpec(pydantic.BaseModel):
+    """Specification for a paragraph to include in the evaluation dataset."""
+
+    spk_id: int
+    chap_id: int
+    para_id: int
+
+
 class TestDsProcessor:
     """Prepares evaluation dataset."""
 
@@ -57,14 +65,12 @@ class TestDsProcessor:
         spec_frames_per_second: Annotated[int, Field(
             description='Num. of spectrogram frames per second to calculate spk rate.')]
 
-        paragraph_word_count_bounds: Annotated[tuple[int, int], Field(
-            description='Bounds for paragraph word count.')]
-
     def __init__(self,
                  config: Configuration,
                  raw_ds_handler: raw_libri_dir_handler.RawLibriDirHandler,
                  alignments_handler: alignments_dir_handler.AlignmentsDirHandler,
-                 spk_embedder: deepspeaker.embedder.DeepSpeakerEmbedder) -> None:
+                 spk_embedder: deepspeaker.embedder.DeepSpeakerEmbedder,
+                 paragraphs_spec: list[ParagraphSpec]) -> None:
         """Initializes the processor."""
 
         self._raw_ds_handler = raw_ds_handler
@@ -77,21 +83,23 @@ class TestDsProcessor:
         self._spk_embedder = spk_embedder
 
         self._cfg = config
+        self._paragraphs_spec = paragraphs_spec
 
     def prepare_dataset(self,
-                        output_dir: pathlib.Path,
-                        max_partial_paras_with_n_sents: dict[int, int],
-                        max_whole_paras_with_n_sents: dict[int, int]) -> None:
+                        output_dir: pathlib.Path) -> None:
         """Prepares evaluation dataset."""
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        eval_dataset_handler = eval_ds_handler.EvalDsHandler(output_dir)
+
+        all_paragraphs: list[raw_libri_dir_handler.ParagraphInfo] = [
+            self._raw_ds_handler.get_paragraph(para_spec.spk_id,
+                                               para_spec.chap_id,
+                                               para_spec.para_id)
+            for para_spec in self._paragraphs_spec
+        ]
 
         partial_paragraphs: list[raw_libri_dir_handler.ParagraphInfo] = []
         whole_paragraphs: list[raw_libri_dir_handler.ParagraphInfo] = []
-
-        all_paragraphs = list(self._raw_ds_handler.iter_all_paragraphs())
-        random.Random(42).shuffle(all_paragraphs)
 
         for paragraph in all_paragraphs:
 
@@ -104,11 +112,7 @@ class TestDsProcessor:
             else:
                 partial_paragraphs.append(paragraph)
 
-        partial_paragraphs = self._filter_paragraphs(partial_paragraphs,
-                                                     max_partial_paras_with_n_sents)
-
-        whole_paragraphs = self._filter_paragraphs(whole_paragraphs,
-                                                   max_whole_paras_with_n_sents)
+        eval_dataset_handler = eval_ds_handler.EvalDsHandler(output_dir)
 
         for paragraph in tqdm.tqdm(partial_paragraphs,
                                    desc='Preparing partial paragraphs'):
@@ -118,8 +122,7 @@ class TestDsProcessor:
                                    desc='Preparing whole paragraphs'):
             self._prepare_whole_paragraph(paragraph, eval_dataset_handler)
 
-        all_speakers = list(self._raw_ds_handler.iter_speakers())
-        chosen_speakers = [spk_id for spk_id in all_speakers
+        chosen_speakers = [spk_id for spk_id in self._raw_ds_handler.iter_speakers()
                            if any(para.spk_id == spk_id
                                   for para in partial_paragraphs + whole_paragraphs)]
 
@@ -134,37 +137,6 @@ class TestDsProcessor:
                 output_path=eval_dataset_handler.spk_embedding_path(spk_id)
 
             )
-
-    def _filter_paragraphs(self,
-                           paragraphs: list[raw_libri_dir_handler.ParagraphInfo],
-                           max_paras_per_sentence_count: dict[int, int]
-                           ) -> list[raw_libri_dir_handler.ParagraphInfo]:
-        """Filters paragraphs by the number of sentences they contain."""
-
-        sentence_count_to_paragraphs: dict[int, list[raw_libri_dir_handler.ParagraphInfo]] = {
-            count: [] for count in max_paras_per_sentence_count
-        }
-
-        for paragraph in paragraphs:
-
-            word_count = sum(len(utt.normalized_text.split()) for utt in paragraph.utterances)
-            min_words, max_words = self._cfg.paragraph_word_count_bounds
-
-            if not min_words <= word_count <= max_words:
-                continue
-
-            sentence_count = len(paragraph.utterances)
-
-            if sentence_count in sentence_count_to_paragraphs:
-                sentence_count_to_paragraphs[sentence_count].append(paragraph)
-
-        filtered_paragraphs: list[raw_libri_dir_handler.ParagraphInfo] = []
-
-        for sentence_count, paras in sentence_count_to_paragraphs.items():
-
-            filtered_paragraphs.extend(paras[:max_paras_per_sentence_count[sentence_count]])
-
-        return filtered_paragraphs
 
     def _prepare_whole_paragraph(self,
                                  paragraph: raw_libri_dir_handler.ParagraphInfo,
@@ -204,7 +176,11 @@ class TestDsProcessor:
                                            for utt in para_data.utterances_data]),
             'sentence_pos': torch.cat(sentence_pos_list),
             'spk_rate': torch.cat(spk_rate_list),
-            'word_to_phoneme_indices': torch.cat(word_phone_indices_list)
+            'word_to_phoneme_indices': torch.cat(word_phone_indices_list),
+            'gst_to_phone_indices': torch.cat(
+                [torch.full((utt.tensors['input_phoneme_ids'].shape[0],), idx, dtype=torch.long)
+                 for idx, utt in enumerate(para_data.utterances_data)]
+            )
         }
 
         wav_parts = [audio_prep.load_wav_raw(utt.wav_path) for utt in paragraph.utterances]
@@ -233,6 +209,11 @@ class TestDsProcessor:
 
             for feature_name, feature_tensor in utt_data.tensors.items():
                 torch.save(feature_tensor, eval_utt.tensors_paths[feature_name])
+
+            torch.save(
+                torch.zeros((utt_data.tensors['input_phoneme_ids'].shape[0],), dtype=torch.long),
+                eval_utt.tensors_paths['gst_to_phone_indices']
+            )
 
             with eval_utt.gt_wav_path.open('wb') as f:
                 soundfile.write(f,

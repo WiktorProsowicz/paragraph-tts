@@ -3,33 +3,17 @@ mlflow_artifacts_root: mlflow_artifacts/
 eval_ds_path: tmp/eval_ds/
 root_output_dir: tmp/eval_results/ 
 
-# acoustic_model_cfg:
-#   experiment_name: proposed_model
-#   run_id: 22138b82f820412abd00aa89249120ab
-#   ckpt_name: epoch=6-step=148841.ckpt
-
-# stl_predictor_cfg:
-#   experiment_name: finding_stl_predictor_baseline
-#   run_id: 21cc198182f14fe4b1152733bbff7d5c
-#   ckpt_name: epoch=6-step=54229.ckpt
-
-# acoustic_model_cfg:
-#   experiment_name: finding_baseline
-#   run_id: 181084dbaae34dc0a066b085daa565d3
-#   ckpt_name: epoch=19-step=425260.ckpt
-
-# stl_predictor_cfg: null
-
-# inference_label: baseline
-
 acoustic_model_cfg:
-  experiment_name: finding_baseline
-  run_id: 48992f42dc574abe9829ced96a0fbe34
-  ckpt_name: epoch=19-step=425260.ckpt
+  experiment_name: proposed_model
+  run_id: 76f7d746d2ce4ea08480f4c4cc166608
+  ckpt_name: epoch=7-step=170104.ckpt
 
-stl_predictor_cfg: null
+stl_predictor_cfg:
+  experiment_name: finding_stl_predictor_baseline
+  run_id: 21cc198182f14fe4b1152733bbff7d5c
+  ckpt_name: epoch=6-step=54229.ckpt
 
-inference_label: baseline_context
+inference_label: proposed_model
 
 energy_quantization_params: [32, -3.0, 3.0]
 pitch_quantization_params: [32, -3.0, 3.0]

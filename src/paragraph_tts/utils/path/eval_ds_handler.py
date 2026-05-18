@@ -139,6 +139,7 @@ class EvalDsHandler:
                         'input_phoneme_ids': utt_path.joinpath('input_phoneme_ids.pt'),
                         'input_ling_stats': utt_path.joinpath('input_ling_stats.pt'),
                         'input_pos_tags': utt_path.joinpath('input_pos_tags.pt'),
+                        'gst_to_phone_indices': utt_path.joinpath('gst_to_phone_indices.pt'),
                         'word_to_phoneme_indices': utt_path.joinpath('word_phone_indices.pt'),
                         'sentence_pos': utt_path.joinpath('sentence_pos.pt'),
                         'spk_rate': utt_path.joinpath('spk_rate.pt')
